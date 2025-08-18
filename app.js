@@ -11,6 +11,8 @@ const createRoute = require("./routes/createAccount.js")
 const loginRoute = require("./routes/login.js")
 const emailVerification = require("./routes/emailVerification.js")
 const activities = require("./routes/activities.js")
+const china = require("./routes/china.js")
+
 
 
 
@@ -23,6 +25,7 @@ app.use("/createAccount", createRoute)
 app.use("/login", loginRoute)
 app.use("/emailVerification", emailVerification)
 app.use("/activities", activities)
+app.use("/china", china)
 
 
 app.listen(3129, ()=>{
