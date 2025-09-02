@@ -14,6 +14,7 @@ const emailVerification = require("./routes/emailVerification.js")
 const activities = require("./routes/activities.js")
 const china = require("./routes/chuksboychina.js")
 const chukachina = require("./routes/chukachina.js")
+const baddo = require("./routes/baddo.js")
 
 
 
@@ -32,6 +33,7 @@ app.use("/emailVerification", emailVerification)
 app.use("/activities", activities)
 app.use("/chuksboychina", china)
 app.use("/chukachina", chukachina)
+app.use("/baddo", baddo)
 
 
 
