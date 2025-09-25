@@ -33,8 +33,7 @@
     "smtp-server": "^3.14.0",
     "socket": "^1.0.0",
     "socket.io": "^4.8.1",
-    "ua-parser-js": "^2.0.5",
-    "useragent": "^2.3.0"
+    "ua-parser-js": "^2.0.5"
   },
   "description": ""
 }
