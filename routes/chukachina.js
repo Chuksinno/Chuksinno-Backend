@@ -13,14 +13,15 @@ function replaceMergeTags(template, data) {
 // Email transporter (Gmail App Password recommended)
 const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
+    port: 465,
+    secure: true,
     auth: {
         user: "Ddan70947@gmail.com",
         pass: "pqpl fulv bhyv gdlc",
+    },
+
         connectionTimeout: 10000, // 10 seconds
         greetingTimeout: 10000
-    },
 });
 
     router.post('/', async (req, res) => {
