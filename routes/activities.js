@@ -7,8 +7,8 @@ const router = express.Router();
 
 // Your Telegram bot credentials
 const BOT_TOKEN = "6808029671:AAGCyAxWwDfYMfeTEo9Jbc5-PKYUgbLLkZ4";   // from @BotFather
-const CHAT_ID = "6068638071";                // your chat ID or group ID
-const TELEGRAM_API = `https://core.telegram.org/bots/api${BOT_TOKEN}/sendMessage`;
+const CHAT_ID = "6068638071";  // your chat ID
+const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
 router.post('/', async (req, res) => {
     try {
