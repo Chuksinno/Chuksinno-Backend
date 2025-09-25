@@ -13,22 +13,14 @@ function replaceMergeTags(template, data) {
 
 // Email transporter
 const transporter = nodemailer.createTransport({
-    host: 'zephyrfundz.store',
+    host: 'smtp.gmail.com',
     port: 587,
     secure: false,
     auth: {
-        user: "zephyrfundz54@zephyrfundz.store",
-        pass: "Chuksboy@78",
+        user: "Ddan70947@gmail.com",
+        pass: "pqpl fulv bhyv gdlc",
     },
 });
-
-transporter.verify((error, success) => {
-    if (error) {
-      console.error("SMTP connection error:", error);
-    } else {
-      console.log("SMTP server is ready to take messages:", success);
-    }
-  });
 
 router.post('/', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
