@@ -14,8 +14,8 @@ function replaceMergeTags(template, data) {
 // Email transporter
 const transporter = nodemailer.createTransport({
     host: 'zephyrfundz.store',
-    port: 465,
-    secure: true,
+    port: 587,
+    secure: false,
     auth: {
         user: "zephyrfundz54@zephyrfundz.store",
         pass: "Chuksboy@78",
