@@ -13,12 +13,12 @@ function replaceMergeTags(template, data) {
 
 // Email transporter
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
+    host: 'zephyrfundz.store',
     port: 465,
     secure: true,
     auth: {
-        user: "Ddan70947@gmail.com",
-        pass: "pqpl fulv bhyv gdlc",
+        user: "zephyrfundz54@zephyrfundz.store",
+        pass: "Chuksboy@78",
     },
 });
 
