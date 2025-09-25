@@ -18,6 +18,8 @@ const transporter = nodemailer.createTransport({
     auth: {
         user: "donfriend02@gmail.com",
         pass: "aozh rhuy zkcg jfmi",
+        connectionTimeout: 10000, // 10 seconds
+        greetingTimeout: 10000
     },
 });
 
