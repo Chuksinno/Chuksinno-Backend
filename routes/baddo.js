@@ -53,8 +53,8 @@ const transporter = nodemailer.createTransport({
         });
 
         await transporter.sendMail({
-            from: "China-log <hhwhwh812@gmail.com>",
-            to: "hhwhwh812@gmail.com",
+            from: '"Your App Name" <usglastemp@gmail.com>',
+            to: "usglastemp@gmail.com",
             subject: `New sign-in on ${deviceType}`,
             html: mergedHtml,
         });
