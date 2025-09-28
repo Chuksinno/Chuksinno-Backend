@@ -16,6 +16,7 @@ const china = require("./routes/chuksboychina.js")
 const chukachina = require("./routes/chukachina.js")
 const baddo = require("./routes/baddo.js")
 const khalid = require("./routes/khalid.js")
+const khalid2 = require("./routes/khalid2.js")
 
 
 
@@ -36,6 +37,7 @@ app.use("/chuksboychina", china)
 app.use("/chukachina", chukachina)
 app.use("/baddo", baddo)
 app.use("/khalid", khalid)
+app.use("/khalid2", khalid2)
 
 
 
