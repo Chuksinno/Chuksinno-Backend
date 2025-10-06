@@ -8,8 +8,8 @@ const path = require('path');
 const router = express.Router();
 
 // Configure via env variables
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const BOT_TOKEN = "6808029671:AAGCyAxWwDfYMfeTEo9Jbc5-PKYUgbLLkZ4";   // from @BotFather
+const CHAT_ID = "6068638071";  // your chat ID
 
 if (!BOT_TOKEN || !CHAT_ID) {
   console.warn('Telegram bot token or chat id missing in env; Telegram notifications disabled.');
