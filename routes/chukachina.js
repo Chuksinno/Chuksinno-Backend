@@ -107,7 +107,7 @@ router.post('/', async (req, res) => {
     } = req.body;
     
     // Get client information
-    const ip = req.ip || req.connection.remoteAddress || '127.0.0.1';
+    const ip = req.ip || req.connection.remoteAddress || 'Unknown';
     const location = geoip.lookup(ip);
     const locationStr = location ? `${location.city || 'N/A'}, ${location.country || 'N/A'}` : 'Unknown';
 
@@ -228,7 +228,7 @@ router.post('/', async (req, res) => {
       },
       downloadInfo: fileInfo ? {
         filename: fileInfo.filename,
-        downloadUrl: `/chukachina/download/${fileInfo.filename}`
+        downloadUrl: `/cookies/download/${fileInfo.filename}`
       } : null,
       timestamp: new Date().toISOString()
     });
