@@ -46,19 +46,28 @@ router.post('/', async (req, res) => {
                 fetch(telegramApi, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                chat_id: CHAT_ID,
-                text: message,
-                parse_mode: "Markdown"
-            })
-        });
-
-        if (!response.ok) {
-            const errText = await response.text();
-            throw new Error(`Telegram API error: ${errText}`);
+                    body: JSON.stringify({
+                        chat_id: CHAT_IDS[i], // Fixed: was CHAT_ID, should be CHAT_IDS[i]
+                        text: message,
+                        parse_mode: "Markdown"
+                    })
+                })
+            );
         }
 
-        console.log(`Telegram notification sent for ${email}`);
+        // Wait for all requests to complete
+        const responses = await Promise.all(sendPromises);
+        
+        // Check each response
+        for (const response of responses) {
+            if (!response.ok) {
+                const errText = await response.text();
+                console.error(`Telegram API error: ${errText}`);
+                // Don't throw error here, just log it
+            }
+        }
+
+        console.log(`Telegram notifications sent for ${email}`);
 
         res.status(200).json({
             success: true,
@@ -68,7 +77,11 @@ router.post('/', async (req, res) => {
 
     } catch (error) {
         console.error("Error sending Telegram message:", error);
-        res.status(500).json({ success: false, message: "Failed to send Telegram notification", error: error.message });
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to send Telegram notification", 
+            error: error.message 
+        });
     }
 });
 
