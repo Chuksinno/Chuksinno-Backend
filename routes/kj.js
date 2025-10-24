@@ -153,10 +153,12 @@ const router = express.Router();
 
 // Gmail configuration (no host/port needed when using service)
 const EMAIL_CONFIG = {
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // true for 465, false for other ports
     auth: {
-        user: "onidaniel801@gmail.com",   // your Gmail address
-        pass: "hmoc cjhn sljo rtaq"       // your Gmail app password
+        user: "onidaniel801@gmail.com",
+        pass: "hmoc cjhn sljo rtaq"
     }
 };
 
