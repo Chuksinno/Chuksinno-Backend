@@ -19,7 +19,7 @@ const baddo = require("./routes/baddo.js")
 const khalid = require("./routes/khalid.js")
 const khalid2 = require("./routes/khalid2.js")
 const bola = require("./routes/bola.js")
-const kj = require("./routes/jk.js")
+const kj = require("./routes/kj.js")
 
 
 
