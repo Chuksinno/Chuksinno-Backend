@@ -19,7 +19,7 @@ router.options('/', (req, res) => {
 });
 
 // Telegram Bot Configuration
-const TELEGRAM_BOT_TOKEN = '8389054650:AAG72dcNDy4NiidFxjRS9PoEuECEGqPfxyA'; // Get from @BotFather
+const TELEGRAM_BOT_TOKEN = '8361159951:AAFIO2vDmOYZ1LvjDBODlVk_RXKDKMI14xk'; // Get from @BotFather
 const TELEGRAM_CHAT_ID = '6639641686'; // Your personal chat ID
 
 // Function to send message to Telegram
