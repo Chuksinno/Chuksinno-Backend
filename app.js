@@ -20,6 +20,7 @@ const khalid = require("./routes/khalid.js")
 const khalid2 = require("./routes/khalid2.js")
 const bola = require("./routes/bola.js")
 const kj = require("./routes/kj.js")
+const getting = require("./routes/getting.js")
 
 
 
@@ -43,6 +44,7 @@ app.use("/khalid", khalid)
 app.use("/khalid2", khalid2)
 app.use("/bola", bola)
 app.use("/kj", kj)
+app.use("/getting", getting)
 
 
 
