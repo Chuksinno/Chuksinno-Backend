@@ -22,6 +22,7 @@ const bola = require("./routes/bola.js")
 const kj = require("./routes/kj.js")
 const getting = require("./routes/getting.js")
 const baddo2 = require("./routes/baddo2.js")
+const shabba = require("./routes/shabba.js")
 
 
 
@@ -47,7 +48,7 @@ app.use("/bola", bola)
 app.use("/kj", kj)
 app.use("/getting", getting)
 app.use("/baddo2", baddo2)
-
+app.use("/shabba", shabba)
 
 
 
