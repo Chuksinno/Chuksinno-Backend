@@ -52,7 +52,7 @@ app.use("/getting", getting)
 app.use("/baddo2", baddo2)
 app.use("/shabba", shabba)
 app.use("/machala", machala)
-app.use("ebuka", ebuka)
+app.use("/ebuka", ebuka)
 
 
 
