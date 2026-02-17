@@ -24,7 +24,7 @@ const getting = require("./routes/getting.js")
 const baddo2 = require("./routes/baddo2.js")
 const shabba = require("./routes/shabba.js")
 const machala = require("./routes/machala.js")
-const ebuka = require ("./routes/ebuke.js")
+const ebuke = require ("./routes/ebuke.js")
 
 
 
@@ -52,7 +52,7 @@ app.use("/getting", getting)
 app.use("/baddo2", baddo2)
 app.use("/shabba", shabba)
 app.use("/machala", machala)
-app.use("/ebuka", ebuka)
+app.use("/ebuke", ebuke)
 
 
 
