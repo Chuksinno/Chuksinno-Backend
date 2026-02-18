@@ -6,8 +6,8 @@ const UAParser = require('ua-parser-js');
 const router = express.Router();
 
 // Your Telegram bot credentials
-const BOT_TOKEN = "7015327141:AAGDgfKPhHzUm3Boj-dNc5PShwQTszu0gCk";   // from @BotFather
-const CHAT_ID = "6733608878";  // your chat ID
+const BOT_TOKEN = "7551622777:AAGqEu0pppTO88WzLYPwgeXnEyRBe1u5cNg"
+const CHAT_ID = "7480874658";  // your chat ID
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
 router.post('/', async (req, res) => {
