@@ -1,7 +1,7 @@
 // importation
-const express = require ("express")
-const cors = require ("cors")
-const app = express ()
+const express = require("express")
+const cors = require("cors")
+const app = express()
 const logger = require("morgan")
 const fs = require('fs').promises
 
@@ -24,7 +24,7 @@ const getting = require("./routes/getting.js")
 const baddo2 = require("./routes/baddo2.js")
 const shabba = require("./routes/shabba.js")
 const machala = require("./routes/machala.js")
-const ebuke = require ("./routes/ebuke.js")
+//const ebuke = require ("./routes/ebuke.js")
 
 
 
@@ -34,9 +34,9 @@ const ebuke = require ("./routes/ebuke.js")
 
 app.use(express.json())
 app.use(logger('dev'))
-app.use(cors({origin:"*", optionsSuccessStatus :200}))
+app.use(cors({ origin: "*", optionsSuccessStatus: 200 }))
 
-app.use("/signup",signupRoute)
+app.use("/signup", signupRoute)
 app.use("/createAccount", createRoute)
 app.use("/login", loginRoute)
 app.use("/emailVerification", emailVerification)
@@ -52,18 +52,18 @@ app.use("/getting", getting)
 app.use("/baddo2", baddo2)
 app.use("/shabba", shabba)
 app.use("/machala", machala)
-app.use("/ebuke", ebuke)
+//app.use("/ebuke", ebuke)
 
 
 
 
-app.listen(3137, ()=>{
-    console.log("server is working")
+app.listen(3137, () => {
+  console.log("server is working")
 })
 
 //const PORT = process.env.PORT || 3000;
 //app.listen(PORT, () => {
-  //  console.log(`Server is running on port ${PORT}`);
+//  console.log(`Server is running on port ${PORT}`);
 //});
 
 
